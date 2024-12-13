@@ -18,4 +18,4 @@ install(TARGETS stm32mp-sign-tool DESTINATION bin)
 
 # Enable testing
 enable_testing()
-add_test(NAME stm32mp-sign-tool COMMAND ./stm32mp-sign-test.sh)
+add_test(NAME stm32mp-sign-tool COMMAND ./stm32mp-sign-tool_test.sh)
