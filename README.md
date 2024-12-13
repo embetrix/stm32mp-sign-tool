@@ -43,6 +43,20 @@ Sign a firmware image, use the following command:
 ./stm32mp-sign-tool -k <private_key_file> -i <image.stm32> -o <image.stm32.signed>
 ```
 
+### Sign a Firmware Image using a HSM Token
+
+Generate a ECDSA key:
+
+```sh
+pkcs11-tool --pin <pin> --module <Module Path> --keypairgen --key-type EC:prime256v1 --id <KeyID> --label <KeyLabel>
+```
+
+Sign a firmware image, use the URI of the key:
+
+```sh
+./stm32mp-sign-tool -v -k  "pkcs11:object=<KeyLabel>" -p <pin> -i <image.stm32> -o <image.stm32.signed>
+```
+
 ## License
 
 This project is licensed under the terms of the **GNU General Public License v3 (GPLv3)**.
