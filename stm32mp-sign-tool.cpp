@@ -236,7 +236,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, EC_KEY* key) {
 
     // Verify the signature
     if (verify_stm32_image(image, key)) {
-        return 1;
+        return -1;
     }
 
     return 0;
