@@ -32,8 +32,10 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/ecdsa.h>
+#include <openssl/engine.h>
 
 static bool verbose = false;
+static ENGINE* engine = nullptr;
 
 struct STM32Header {
     char magic[4];
@@ -62,17 +64,20 @@ std::vector<unsigned char> get_raw_pubkey(EC_KEY* key) {
     if (!x || !y) {
         if (x) BN_free(x);
         if (y) BN_free(y);
-        throw std::runtime_error("Failed to allocate BIGNUM");
+        std::cerr << "Failed to allocate BIGNUM" << std::endl;
+        return {};
     }
     if (!EC_POINT_get_affine_coordinates_GFp(group, point, x, y, nullptr)) {
         BN_free(x);
         BN_free(y);
-        throw std::runtime_error("Failed to get affine coordinates");
+        std::cerr << "Failed to get affine coordinates" << std::endl;
+        return {};
     }
     if (BN_bn2binpad(x, pubkey.data(), 32) != 32 || BN_bn2binpad(y, pubkey.data() + 32, 32) != 32) {
         BN_free(x);
         BN_free(y);
-        throw std::runtime_error("Failed to convert BIGNUM to binary");
+        std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
+        return {};
     }
     BN_free(x);
     BN_free(y);
@@ -95,7 +100,8 @@ int key_algorithm(EC_KEY* key) {
     if (nid == NID_X9_62_prime256v1) {
         return -1;
     }
-    throw std::runtime_error("Unsupported ECDSA curve");
+    std::cerr << "Unsupported ECDSA curve" << std::endl;
+    return -1;
 }
 
 void print_hex(const std::string& label, const std::vector<unsigned char>& data) {
@@ -108,23 +114,92 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
     std::cout << std::endl;
 }
 
-EC_KEY* load_key(const char* key_file) {
-    FILE* key_fp = fopen(key_file, "r");
-    if (!key_fp) {
-        throw std::runtime_error("Failed to open key file");
+EC_KEY* load_key(const char* key_file, const char* passphrase) {
+    EC_KEY* ec_key = nullptr;
+    if (!key_file || std::strlen(key_file) == 0) {
+        std::cerr << "Key file path is empty" << std::endl;
+        return nullptr;
+    }
+    if (std::strncmp(key_file, "pkcs11:", 7) == 0) {
+        // Load key using PKCS#11
+
+        // Load the engine
+        ENGINE_load_builtin_engines();
+        engine = ENGINE_by_id("pkcs11");
+        if (!engine) {
+            std::cerr << "Failed to load PKCS#11 engine" << std::endl;
+            return nullptr;
+        }
+
+        // Initialize the engine
+        if (!ENGINE_init(engine)) {
+            ENGINE_free(engine);
+            std::cerr << "Failed to initialize PKCS#11 engine" << std::endl;
+            return nullptr;
+        }
+
+        // Set the PIN
+        if (passphrase && !ENGINE_ctrl_cmd_string(engine, "PIN", passphrase, 0)) {
+            ENGINE_finish(engine);
+            ENGINE_free(engine);
+            std::cerr << "Failed to set PKCS#11 PIN" << std::endl;
+            return nullptr;
+        }
+
+        // Load the private key
+        EVP_PKEY* pkey = ENGINE_load_private_key(engine, key_file, nullptr, nullptr);
+        if (!pkey) {
+            ENGINE_finish(engine);
+            ENGINE_free(engine);
+            std::cerr << "Failed to load private key from PKCS#11" << std::endl;
+            return nullptr;
+        }
+
+        // Extract the EC_KEY from the EVP_PKEY
+        ec_key = EVP_PKEY_get1_EC_KEY(pkey);
+        EVP_PKEY_free(pkey);
+
+        if (!ec_key) {
+            ENGINE_finish(engine);
+            ENGINE_free(engine);
+            std::cerr << "Failed to extract EC_KEY from EVP_PKEY" << std::endl;
+            return nullptr;
+        }
+    } 
+    else {
+        // Load key from file
+        FILE* key_fp = fopen(key_file, "r");
+        if (!key_fp) {
+            std::cerr << "Failed to open key file" << std::endl;
+            return nullptr;
+        }
+
+        ec_key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, (void*)passphrase);
+        fclose(key_fp);
+        if (!ec_key) {
+            std::cerr << "Failed to read key from file" << std::endl;
+            return nullptr;
+        }
     }
 
-    EC_KEY* key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, nullptr);
-    fclose(key_fp);
-    if (!key) {
-        throw std::runtime_error("Failed to read key");
-    }
-
-    return key;
+    return ec_key;
 }
 
-int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_file) {
-    EC_KEY* key = load_key(key_file);
+int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_file, const char* passphrase) {
+    if (image.empty()) {
+        std::cerr << "Image data is empty" << std::endl;
+        return -1;
+    }
+    if (!key_file || std::strlen(key_file) == 0) {
+        std::cerr << "Key file path is empty" << std::endl;
+        return -1;
+    }
+    EC_KEY* key = load_key(key_file, passphrase);
+    if (!key) {
+        std::cerr << "Failed to load key" << std::endl;
+        return -1;
+    }
+
     STM32Header header = unpack_stm32_header(image);
 
     if (std::strncmp(header.magic, "STM2", sizeof(header.magic)) != 0) {
@@ -134,6 +209,10 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
     }
 
     std::vector<unsigned char> pubkey = get_raw_pubkey(key);
+    if (pubkey.empty()) {
+        EC_KEY_free(key);
+        return -1;
+    }
     print_hex("Public Key", pubkey);
 
     if (std::memcmp(header.ecdsa_pubkey, pubkey.data(), pubkey.size()) != 0) {
@@ -196,8 +275,21 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
     }
 }
 
-int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file) {
-    EC_KEY* key = load_key(key_file);
+int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file, const char* passphrase) {
+    if (image.empty()) {
+        std::cerr << "Image data is empty" << std::endl;
+        return -1;
+    }
+    if (!key_file || std::strlen(key_file) == 0) {
+        std::cerr << "Key file path is empty" << std::endl;
+        return -1;
+    }
+    EC_KEY* key = load_key(key_file, passphrase);
+    if (!key) {
+        std::cerr << "Failed to load key" << std::endl;
+        return -1;
+    }
+
     STM32Header header = unpack_stm32_header(image);
 
     if (std::strncmp(header.magic, "STM2", sizeof(header.magic)) != 0) {
@@ -212,6 +304,10 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file) {
 
     // Get the public key from the private key
     std::vector<unsigned char> pubkey = get_raw_pubkey(key);
+    if (pubkey.empty()) {
+        EC_KEY_free(key);
+        return -1;
+    }
     print_hex("Public Key", pubkey);
 
     std::memcpy(header.ecdsa_pubkey, pubkey.data(), pubkey.size());
@@ -264,7 +360,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file) {
     EC_KEY_free(key);
 
     // Verify the signature
-    if (verify_stm32_image(image, key_file)) {
+    if (verify_stm32_image(image, key_file, passphrase)) {
         return 1;
     }
 
@@ -296,7 +392,7 @@ int main(int argc, char* argv[]) {
                 output_file = optarg;
                 break;
             default:
-                std::cerr << "Usage: " << argv[0] << " -k key_file [-p passphrase] [-v] [-i input_file] [-o output_file]" << std::endl;
+                std::cerr << "Usage: " << argv[0] << " -k key_file [-p passphrase/pin] [-v] [-i input_file] [-o output_file]" << std::endl;
                 return 1;
         }
     }
@@ -311,7 +407,7 @@ int main(int argc, char* argv[]) {
         std::vector<unsigned char> image((std::istreambuf_iterator<char>(image_file)), std::istreambuf_iterator<char>());
         image_file.close();
 
-        if (sign_stm32_image(image, key_file) != 0) {
+        if (sign_stm32_image(image, key_file, passphrase) != 0) {
             return 1;
         }
 
@@ -320,6 +416,11 @@ int main(int argc, char* argv[]) {
             output.write(reinterpret_cast<const char*>(image.data()), static_cast<std::streamsize>(image.size()));
             output.close();
         }
+    }
+
+    if (engine) {
+        ENGINE_finish(engine);
+        ENGINE_free(engine);
     }
 
     return 0;
