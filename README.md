@@ -7,6 +7,8 @@ It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integri
 
 This tool is reverse-engineered from the official STM32 signing tool available at [STM32 Signing Tool](https://wiki.st.com/stm32mpu/wiki/Signing_tool).
 
+**Note:** This tool does not implement all the functionalities of the official ST Tools and should be used with care.
+
 ## Features
 
 - Sign firmware images with ECDSA.
