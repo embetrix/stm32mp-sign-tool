@@ -114,13 +114,13 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
     std::cout << std::endl;
 }
 
-EC_KEY* load_key(const char* key_file, const char* passphrase) {
+EC_KEY* load_key(const char* key_desc, const char* passphrase) {
     EC_KEY* ec_key = nullptr;
-    if (!key_file || std::strlen(key_file) == 0) {
+    if (!key_desc || std::strlen(key_desc) == 0) {
         std::cerr << "Key file path is empty" << std::endl;
         return nullptr;
     }
-    if (std::strncmp(key_file, "pkcs11:", 7) == 0) {
+    if (std::strncmp(key_desc, "pkcs11:", 7) == 0) {
         // Load key using PKCS#11
 
         // Load the engine
@@ -147,7 +147,7 @@ EC_KEY* load_key(const char* key_file, const char* passphrase) {
         }
 
         // Load the private key
-        EVP_PKEY* pkey = ENGINE_load_private_key(engine, key_file, nullptr, nullptr);
+        EVP_PKEY* pkey = ENGINE_load_private_key(engine, key_desc, nullptr, nullptr);
         if (!pkey) {
             ENGINE_finish(engine);
             ENGINE_free(engine);
@@ -168,7 +168,7 @@ EC_KEY* load_key(const char* key_file, const char* passphrase) {
     } 
     else {
         // Load key from file
-        FILE* key_fp = fopen(key_file, "r");
+        FILE* key_fp = fopen(key_desc, "r");
         if (!key_fp) {
             std::cerr << "Failed to open key file" << std::endl;
             return nullptr;
@@ -185,16 +185,16 @@ EC_KEY* load_key(const char* key_file, const char* passphrase) {
     return ec_key;
 }
 
-int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_file, const char* passphrase) {
+int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
     if (image.empty()) {
         std::cerr << "Image data is empty" << std::endl;
         return -1;
     }
-    if (!key_file || std::strlen(key_file) == 0) {
+    if (!key_desc || std::strlen(key_desc) == 0) {
         std::cerr << "Key file path is empty" << std::endl;
         return -1;
     }
-    EC_KEY* key = load_key(key_file, passphrase);
+    EC_KEY* key = load_key(key_desc, passphrase);
     if (!key) {
         std::cerr << "Failed to load key" << std::endl;
         return -1;
@@ -275,16 +275,16 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
     }
 }
 
-int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file, const char* passphrase) {
+int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
     if (image.empty()) {
         std::cerr << "Image data is empty" << std::endl;
         return -1;
     }
-    if (!key_file || std::strlen(key_file) == 0) {
+    if (!key_desc || std::strlen(key_desc) == 0) {
         std::cerr << "Key file path is empty" << std::endl;
         return -1;
     }
-    EC_KEY* key = load_key(key_file, passphrase);
+    EC_KEY* key = load_key(key_desc, passphrase);
     if (!key) {
         std::cerr << "Failed to load key" << std::endl;
         return -1;
@@ -360,7 +360,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file, co
     EC_KEY_free(key);
 
     // Verify the signature
-    if (verify_stm32_image(image, key_file, passphrase)) {
+    if (verify_stm32_image(image, key_desc, passphrase)) {
         return 1;
     }
 
@@ -368,7 +368,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file, co
 }
 
 int main(int argc, char* argv[]) {
-    const char* key_file = nullptr;
+    const char* key_desc = nullptr;
     const char* passphrase = nullptr;
     const char* input_file = nullptr;
     const char* output_file = nullptr;
@@ -377,7 +377,7 @@ int main(int argc, char* argv[]) {
     while ((opt = getopt(argc, argv, "k:p:vi:o:")) != -1) {
         switch (opt) {
             case 'k':
-                key_file = optarg;
+                key_desc = optarg;
                 break;
             case 'p':
                 passphrase = optarg;
@@ -392,13 +392,13 @@ int main(int argc, char* argv[]) {
                 output_file = optarg;
                 break;
             default:
-                std::cerr << "Usage: " << argv[0] << " -k key_file [-p passphrase/pin] [-v] [-i input_file] [-o output_file]" << std::endl;
-                return 1;
+                std::cerr << "Usage: " << argv[0] << " -k key_desc [-p passphrase/pin] [-v] [-i input_file] [-o output_file]" << std::endl;
+                return -1;
         }
     }
 
-    if (!key_file) {
-        std::cerr << "Must specify a key file" << std::endl;
+    if (!key_desc) {
+        std::cerr << "Must specify a key file or pkcs11 uri" << std::endl;
         return -1;
     }
 
@@ -407,8 +407,8 @@ int main(int argc, char* argv[]) {
         std::vector<unsigned char> image((std::istreambuf_iterator<char>(image_file)), std::istreambuf_iterator<char>());
         image_file.close();
 
-        if (sign_stm32_image(image, key_file, passphrase) != 0) {
-            return 1;
+        if (sign_stm32_image(image, key_desc, passphrase) != 0) {
+            return -1;
         }
 
         if (output_file) {
