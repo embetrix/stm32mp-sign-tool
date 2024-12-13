@@ -108,11 +108,28 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
     std::cout << std::endl;
 }
 
-int verify_stm32_image(const std::vector<unsigned char>& image, EC_KEY* key) {
+EC_KEY* load_key(const char* key_file) {
+    FILE* key_fp = fopen(key_file, "r");
+    if (!key_fp) {
+        throw std::runtime_error("Failed to open key file");
+    }
+
+    EC_KEY* key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, nullptr);
+    fclose(key_fp);
+    if (!key) {
+        throw std::runtime_error("Failed to read key");
+    }
+
+    return key;
+}
+
+int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_file) {
+    EC_KEY* key = load_key(key_file);
     STM32Header header = unpack_stm32_header(image);
 
     if (std::strncmp(header.magic, "STM2", sizeof(header.magic)) != 0) {
         std::cerr << "Not an STM32 header (signature FAIL)" << std::endl;
+        EC_KEY_free(key);
         return -1;
     }
 
@@ -121,13 +138,15 @@ int verify_stm32_image(const std::vector<unsigned char>& image, EC_KEY* key) {
 
     if (std::memcmp(header.ecdsa_pubkey, pubkey.data(), pubkey.size()) != 0) {
         std::cerr << "Image is not signed with the provided key" << std::endl;
-        return -1;
+        EC_KEY_free(key);
+        return 1;
     }
 
     std::vector<unsigned char> buffer_to_hash(image.begin() + sizeof(STM32Header), image.end());
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
+        EC_KEY_free(key);
         return -1;
     }
     std::vector<unsigned char> signature(header.signature, header.signature + sizeof(header.signature));
@@ -140,6 +159,7 @@ int verify_stm32_image(const std::vector<unsigned char>& image, EC_KEY* key) {
 
     if (!sig) {
         std::cerr << "Failed to create ECDSA_SIG structure" << std::endl;
+        EC_KEY_free(key);
         return -1;
     }
 
@@ -151,6 +171,7 @@ int verify_stm32_image(const std::vector<unsigned char>& image, EC_KEY* key) {
         if (s) BN_free(s);
         std::cerr << "Failed to create BIGNUMs for r and s" << std::endl;
         ECDSA_SIG_free(sig);
+        EC_KEY_free(key);
         return -1;
     }
 
@@ -159,11 +180,13 @@ int verify_stm32_image(const std::vector<unsigned char>& image, EC_KEY* key) {
         BN_free(s);
         std::cerr << "Failed to set r and s in ECDSA_SIG" << std::endl;
         ECDSA_SIG_free(sig);
+        EC_KEY_free(key);
         return -1;
     }
 
     int verify_status = ECDSA_do_verify(hash.data(), SHA256_DIGEST_LENGTH, sig, key);
     ECDSA_SIG_free(sig);
+    EC_KEY_free(key);
 
     if (verify_status == 1) {
         return 0;
@@ -173,11 +196,13 @@ int verify_stm32_image(const std::vector<unsigned char>& image, EC_KEY* key) {
     }
 }
 
-int sign_stm32_image(std::vector<unsigned char>& image, EC_KEY* key) {
+int sign_stm32_image(std::vector<unsigned char>& image, const char* key_file) {
+    EC_KEY* key = load_key(key_file);
     STM32Header header = unpack_stm32_header(image);
 
     if (std::strncmp(header.magic, "STM2", sizeof(header.magic)) != 0) {
         std::cerr << "Not an STM32 header (signature FAIL)" << std::endl;
+        EC_KEY_free(key);
         return -1;
     }
 
@@ -202,6 +227,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, EC_KEY* key) {
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
+        EC_KEY_free(key);
         return -1;
     }
     print_hex("Hash(sha256)", hash);
@@ -209,6 +235,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, EC_KEY* key) {
     ECDSA_SIG* sig = ECDSA_do_sign(hash.data(), SHA256_DIGEST_LENGTH, key);
     if (sig == nullptr) {
         std::cerr << "Failed to sign the image" << std::endl;
+        EC_KEY_free(key);
         return -1;
     }
 
@@ -221,6 +248,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, EC_KEY* key) {
     if (BN_bn2binpad(r, r_bytes.data(), static_cast<int>(r_bytes.size())) < 0 || BN_bn2binpad(s, s_bytes.data(), static_cast<int>(s_bytes.size())) < 0) {
         std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
         ECDSA_SIG_free(sig);
+        EC_KEY_free(key);
         return -1;
     }
     print_hex("ECC key(r)", r_bytes);
@@ -233,10 +261,11 @@ int sign_stm32_image(std::vector<unsigned char>& image, EC_KEY* key) {
 
     std::memcpy(image.data() + offsetof(STM32Header, signature), signature.data(), signature.size());
     ECDSA_SIG_free(sig);
+    EC_KEY_free(key);
 
     // Verify the signature
-    if (verify_stm32_image(image, key)) {
-        return -1;
+    if (verify_stm32_image(image, key_file)) {
+        return 1;
     }
 
     return 0;
@@ -277,27 +306,13 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    FILE* key_fp = fopen(key_file, "r");
-    if (!key_fp) {
-        std::cerr << "Failed to open key file" << std::endl;
-        return -1;
-    }
-
-    EC_KEY* key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, (void*)passphrase);
-    fclose(key_fp);
-    if (!key) {
-        std::cerr << "Failed to read key" << std::endl;
-        return -1;
-    }
-
     if (input_file) {
         std::ifstream image_file(input_file, std::ios::binary);
         std::vector<unsigned char> image((std::istreambuf_iterator<char>(image_file)), std::istreambuf_iterator<char>());
         image_file.close();
 
-        if (sign_stm32_image(image, key) != 0) {
-            EC_KEY_free(key);
-            return -1;
+        if (sign_stm32_image(image, key_file) != 0) {
+            return 1;
         }
 
         if (output_file) {
@@ -307,6 +322,5 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    EC_KEY_free(key);
     return 0;
 }
