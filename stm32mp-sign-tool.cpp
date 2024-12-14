@@ -312,6 +312,10 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
 
     std::memcpy(header.ecdsa_pubkey, pubkey.data(), pubkey.size());
     header.ecdsa_algo = static_cast<uint32_t>(key_algorithm(key));
+    if (header.ecdsa_algo < 0) {
+        EC_KEY_free(key);
+        return -1;
+    }
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
     header.last_byte = 0; // Ensure last byte is zeroed
