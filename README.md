@@ -2,7 +2,7 @@
 
 ## Overview
 
-The STM32MP Sign Tool is a utility for signing and verifying firmware images for STM32MP MPUs. 
+The `stm32mp-sign-tool` is a utility for signing and verifying firmware images for STM32MP MPUs. 
 It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integrity and authenticity of the firmware.
 
 This tool is reverse-engineered from the official STM32 signing tool available at [STM32 Signing Tool](https://wiki.st.com/stm32mpu/wiki/Signing_tool).
@@ -20,12 +20,30 @@ This tool is reverse-engineered from the official STM32 signing tool available a
 - OpenSSL library
 - C++ compiler
 - CMake
+- Optional: PKCS#11 libraries and tools for HSM signing
+
+## Installation
+
+### Install Dependencies
+
+#### Ubuntu
+
+```sh
+sudo apt-get update
+sudo apt-get install -y openssl libssl-dev python3 softhsm2 opensc libengine-pkcs11-openssl
+```
 
 ## Build
 
 ```sh
 cmake .
 make
+```
+
+## Test
+
+```sh
+ctest -V
 ```
 
 ## Usage
