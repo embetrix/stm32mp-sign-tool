@@ -183,11 +183,6 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
         }
     }
 
-    // Securely erase the passphrase
-    if (passphrase) {
-        std::memset((void*)passphrase, 0, std::strlen(passphrase));
-    }
-
     return 0;
 }
 
@@ -371,7 +366,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
 
     // Verify the signature
     if (verify_stm32_image(image, key_desc, passphrase)) {
-        return 1;
+        return -1;
     }
 
     return 0;
@@ -440,6 +435,11 @@ int main(int argc, char* argv[]) {
     if (engine) {
         ENGINE_finish(engine);
         ENGINE_free(engine);
+    }
+
+    // Securely erase the passphrase
+    if (passphrase) {
+        std::memset((void*)passphrase, 0, std::strlen(passphrase));
     }
 
     return 0;
