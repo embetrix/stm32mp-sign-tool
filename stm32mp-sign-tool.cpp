@@ -377,6 +377,10 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     return 0;
 }
 
+void usage(const char* argv0) {
+    std::cerr << "Usage: " << argv0 << " -k key_desc [-p passphrase/pin] [-v] [-i input_file] [-o output_file]" << std::endl;
+}
+
 int main(int argc, char* argv[]) {
     const char* key_desc = nullptr;
     const char* passphrase = nullptr;
@@ -384,6 +388,11 @@ int main(int argc, char* argv[]) {
     const char* output_file = nullptr;
 
     int opt;
+    if (argc == 1) {
+        usage(argv[0]);
+        return -1;
+    }
+
     while ((opt = getopt(argc, argv, "k:p:vi:o:")) != -1) {
         switch (opt) {
             case 'k':
@@ -402,7 +411,7 @@ int main(int argc, char* argv[]) {
                 output_file = optarg;
                 break;
             default:
-                std::cerr << "Usage: " << argv[0] << " -k key_desc [-p passphrase/pin] [-v] [-i input_file] [-o output_file]" << std::endl;
+                usage(argv[0]);
                 return -1;
         }
     }
