@@ -41,7 +41,7 @@ def generate_stm32_header(magic, checksum, hdr_version, length, entry_addr, load
         option_flags,
         ecdsa_algo,
         bytes(64),  # Empty public key
-        0  # last_byte
+        0  # binary_type
     )
     return header
 
