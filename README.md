@@ -5,15 +5,14 @@
 The `stm32mp-sign-tool` is a utility for signing and verifying firmware images for STM32MP MPUs. 
 It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integrity and authenticity of the firmware.
 
-This tool is reverse-engineered from the official STM32 signing tool available at [STM32 Signing Tool](https://wiki.st.com/stm32mpu/wiki/Signing_tool).
+**Disclaimer:** This tool is solely based on the [public specification](https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files) of the STM32 header format. It does not rely on reverse engineering or proprietary code and does not implement all the functionalities of the [official ST Tools](https://wiki.st.com/stm32mpu/wiki/Signing_tool). Use this utility with care, as it is not affiliated with nor endorsed by STMicroelectronics.
 
-**Note:** This tool does not implement all the functionalities of the official ST Tools and should be used with care.
 
 ## Features
 
-- Sign firmware images with ECDSA.
-- Verify the signature of firmware images.
-- Compatible with STM32 MPU firmware headers.
+- Sign/Verify firmware images with ECDSA (P-256 NIST and brainpool 256).
+- Support of HSM Token (PKCS#11).
+- Currently supports only STM32MP15x MPU firmware headers.
 
 ## Requirements
 
