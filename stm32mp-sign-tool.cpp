@@ -25,6 +25,7 @@
 #include <getopt.h>
 #include <stdexcept>
 #include <cstdint>
+#include <iomanip>
 #include <openssl/err.h>
 #include <openssl/ec.h>
 #include <openssl/obj_mac.h>
@@ -109,9 +110,9 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
         return;
     std::cout << label << ": ";
     for (unsigned char byte : data) {
-        printf("%02x", byte);
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
     }
-    std::cout << std::endl;
+    std::cout << std::dec << std::endl;
 }
 
 EC_KEY* load_key(const char* key_desc, const char* passphrase) {
