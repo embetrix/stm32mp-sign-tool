@@ -264,8 +264,8 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
         EC_KEY_free(key);
         return 1;
     }
-
-    std::vector<unsigned char> buffer_to_hash(image.begin() + sizeof(STM32Header), image.end());
+    // Signature is calculated from first byte of header version field to last byte of image given by image length field.
+    std::vector<unsigned char> buffer_to_hash(image.begin() + 0x48, image.end());
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
@@ -299,9 +299,9 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
     }
 
     if (ECDSA_SIG_set0(sig, r, s) == 0) {
+        std::cerr << "Failed to set r and s in ECDSA_SIG" << std::endl;
         BN_free(r);
         BN_free(s);
-        std::cerr << "Failed to set r and s in ECDSA_SIG" << std::endl;
         ECDSA_SIG_free(sig);
         EC_KEY_free(key);
         return -1;
@@ -369,7 +369,8 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     repack_stm32_header(image, header);
 
     // Ensure the buffer to hash is correctly constructed
-    std::vector<unsigned char> buffer_to_hash(image.begin() + sizeof(STM32Header), image.end());
+    // Signature is calculated from first byte of header version field to last byte of image given by image length field.
+    std::vector<unsigned char> buffer_to_hash(image.begin() + 0x48, image.end());
 
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
