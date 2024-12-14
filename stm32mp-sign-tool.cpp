@@ -43,6 +43,9 @@ static ENGINE* engine = nullptr;
 /* https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files */
 /*                                                                 */
 /*******************************************************************/
+#define STM32_MAGIC "STM2" // 0x53544D32
+#define HDR_VERSION  0x00010000 // Header version v1.0 
+
 struct STM32Header {
     char magic[4];
     unsigned char signature[64];
@@ -211,7 +214,7 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
 
     STM32Header header = unpack_stm32_header(image);
 
-    if (std::strncmp(header.magic, "STM2", sizeof(header.magic)) != 0) {
+    if (std::strncmp(header.magic, STM32_MAGIC, sizeof(header.magic)) != 0) {
         std::cerr << "Not an STM32 header (signature FAIL)" << std::endl;
         EC_KEY_free(key);
         return -1;
@@ -301,7 +304,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
 
     STM32Header header = unpack_stm32_header(image);
 
-    if (std::strncmp(header.magic, "STM2", sizeof(header.magic)) != 0) {
+    if (std::strncmp(header.magic, STM32_MAGIC, sizeof(header.magic)) != 0) {
         std::cerr << "Not an STM32 header (signature FAIL)" << std::endl;
         EC_KEY_free(key);
         return -1;
@@ -310,6 +313,9 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     // Ensure reserved fields are set to 0
     header.reserved1 = 0;
     header.reserved2 = 0;
+
+    // Set header version
+    header.hdr_version = HDR_VERSION;
 
     // Get the public key from the private key
     std::vector<unsigned char> pubkey = get_raw_pubkey(key);
