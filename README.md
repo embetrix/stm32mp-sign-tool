@@ -1,24 +1,27 @@
-# STM32MP Sign Tool
+
+
+# stm32mp-sign-tool
 
 ## Overview
 
 The `stm32mp-sign-tool` is a utility for signing and verifying firmware images for STM32MP MPUs. 
 It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integrity and authenticity of the firmware.
 
-**Disclaimer:** This tool is solely based on the [public specification](https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files) of the STM32 header format. It does not rely on reverse engineering or proprietary code and does not implement all the functionalities of the [official ST Tools](https://wiki.st.com/stm32mpu/wiki/Signing_tool). Use this utility with care, as it is not affiliated with nor endorsed by STMicroelectronics.
-
+**Disclaimer:** This tool is entirely developed based on publicly available information of the [STM32 header format](https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files) and does not use reverse engineering or incorporate any proprietary code.
+It does not implement all the functionalities of the [official ST Tools](https://wiki.st.com/stm32mpu/wiki/Signing_tool). 
+Use this utility with care, as it is not affiliated with nor endorsed by STMicroelectronics.
 
 ## Features
 
-- Sign/Verify firmware images with ECDSA (P-256 NIST and brainpool 256).
+- Sign/Verify firmware images with ECDSA (NIST P-256 or brainpool 256).
 - Support of HSM Token (PKCS#11).
-- Currently supports only STM32MP15x MPU firmware headers.
+- Currently supports only STM32MP15x MPU firmware image headers.
 
 ## Requirements
 
-- OpenSSL library
 - C++ compiler
 - CMake
+- OpenSSL library
 - Optional: PKCS#11 libraries and tools for HSM signing
 
 ## Installation
@@ -81,9 +84,8 @@ You are free to use, modify, and distribute this software under the conditions o
 
 For more information about the GPLv3 license, refer to the [LICENSE](LICENSE) file in this repository or visit [GNU's official page](https://www.gnu.org/licenses/gpl-3.0.html).
 
----
 
-## Implicit Contributor License Agreement (CLA)
+## Contributor License Agreement (CLA)
 
 By submitting a pull request to this repository, you agree to the following terms:
 
@@ -92,5 +94,3 @@ By submitting a pull request to this repository, you agree to the following term
    - Use, modify, sublicense, and distribute your contribution under the terms of the **GPLv3**.
    - Use, modify, sublicense, and distribute your contribution under alternative licenses, including commercial licenses.
 3. You understand that you retain the copyright to your contribution but agree it may be relicensed under these terms.
-
----
