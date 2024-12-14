@@ -38,6 +38,11 @@
 static bool verbose = false;
 static ENGINE* engine = nullptr;
 
+/*******************************************************************/
+/* STM32 header format (STM32MP15x)                                */
+/* https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files */
+/*                                                                 */
+/*******************************************************************/
 struct STM32Header {
     char magic[4];
     unsigned char signature[64];
@@ -53,7 +58,7 @@ struct STM32Header {
     uint32_t ecdsa_algo;
     unsigned char ecdsa_pubkey[64];
     unsigned char padding[83];
-    unsigned char last_byte;
+    unsigned char binary_type;
 } __attribute__((packed));
 
 std::vector<unsigned char> get_raw_pubkey(EC_KEY* key) {
@@ -99,7 +104,10 @@ int key_algorithm(EC_KEY* key) {
     const EC_GROUP* group = EC_KEY_get0_group(key);
     int nid = EC_GROUP_get_curve_name(group);
     if (nid == NID_X9_62_prime256v1) {
-        return -1;
+        return 1;
+    }
+    else if (nid == NID_brainpoolP256r1) {
+        return 2;
     }
     std::cerr << "Unsupported ECDSA curve" << std::endl;
     return -1;
@@ -319,7 +327,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     }
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
-    header.last_byte = 0; // Ensure last byte is zeroed
+    header.binary_type = 0x10; // 0x10-0x1F: FSBL
     repack_stm32_header(image, header);
 
     // Ensure the buffer to hash is correctly constructed
