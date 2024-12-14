@@ -197,6 +197,38 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
     return 0;
 }
 
+int hash_pubkey(const char* key_desc, const char* passphrase, const std::string &output_file) {
+    if (!key_desc || output_file.empty()) {
+        std::cerr << "Invalid arguments" << std::endl;
+        return -1;
+    }
+    EC_KEY* key = nullptr;
+    if (load_key(key_desc, passphrase, &key) != 0) {
+        std::cerr << "Failed to load key" << std::endl;
+        return -1;
+    }
+    if (!key) {
+        std::cerr << "Invalid key" << std::endl;
+        return -1;
+    }
+    std::vector<unsigned char> pubkey = get_raw_pubkey(const_cast<EC_KEY*>(key));
+    if (pubkey.empty()) {
+        std::cerr << "Failed to get raw public key" << std::endl;
+        return -1;
+    }
+
+    std::vector<unsigned char> phash(SHA256_DIGEST_LENGTH);
+    SHA256(pubkey.data(), pubkey.size(), phash.data());
+    print_hex("Pubkey(sha256)", phash);
+
+    std::ofstream output(output_file, std::ios::binary);
+    output.write(reinterpret_cast<const char*>(phash.data()), static_cast<std::streamsize>(phash.size()));
+    output.close();
+
+    return 0;
+ 
+}
+
 int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
     if (image.empty()) {
         std::cerr << "Image data is empty" << std::endl;
@@ -395,6 +427,7 @@ int main(int argc, char* argv[]) {
     const char* passphrase = nullptr;
     const char* input_file = nullptr;
     const char* output_file = nullptr;
+    const char* output_hash = nullptr;
 
     int opt;
     if (argc == 1) {
@@ -402,7 +435,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    while ((opt = getopt(argc, argv, "k:p:vi:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "k:p:h:vi:o:")) != -1) {
         switch (opt) {
             case 'k':
                 key_desc = optarg;
@@ -412,6 +445,9 @@ int main(int argc, char* argv[]) {
                 break;
             case 'v':
                 verbose = true;
+                break;
+            case 'h':
+                output_hash = optarg;
                 break;
             case 'i':
                 input_file = optarg;
@@ -443,6 +479,12 @@ int main(int argc, char* argv[]) {
             std::ofstream output(output_file, std::ios::binary);
             output.write(reinterpret_cast<const char*>(image.data()), static_cast<std::streamsize>(image.size()));
             output.close();
+        }
+    }
+
+    if(output_hash) {
+        if (hash_pubkey(key_desc, passphrase, output_hash) != 0) {
+            return -1;
         }
     }
 

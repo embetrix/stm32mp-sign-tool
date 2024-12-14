@@ -73,6 +73,17 @@ Sign a firmware image using the URI of the key:
 ./stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -i <image.stm32> -o <image.stm32.signed>
 ```
 
+### Generating the public key hashes
+
+```sh
+./stm32mp-sign-tool -v -k <private_key_file> -h <hash output>
+```
+or
+
+```sh
+./stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -h <hash output>
+```
+
 ## License
 
 This project is licensed under the terms of the **GNU General Public License v3 (GPLv3)**. You are free to use, modify, and distribute this software under the conditions outlined in the GPLv3 license.
