@@ -115,11 +115,11 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
     std::cout << std::dec << std::endl;
 }
 
-EC_KEY* load_key(const char* key_desc, const char* passphrase) {
-    EC_KEY* ec_key = nullptr;
-    if (!key_desc || std::strlen(key_desc) == 0) {
-        std::cerr << "Key file path is empty" << std::endl;
-        return nullptr;
+int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
+    *ec_key = nullptr;
+    if (!key_desc || !ec_key) {
+        std::cerr << "Invalid arguments" << std::endl;
+        return -1;
     }
     if (std::strncmp(key_desc, "pkcs11:", 7) == 0) {
         // Load key using PKCS#11
@@ -129,14 +129,14 @@ EC_KEY* load_key(const char* key_desc, const char* passphrase) {
         engine = ENGINE_by_id("pkcs11");
         if (!engine) {
             std::cerr << "Failed to load PKCS#11 engine" << std::endl;
-            return nullptr;
+            return -1;
         }
 
         // Initialize the engine
         if (!ENGINE_init(engine)) {
             ENGINE_free(engine);
             std::cerr << "Failed to initialize PKCS#11 engine" << std::endl;
-            return nullptr;
+            return -1;
         }
 
         // Set the PIN
@@ -144,7 +144,7 @@ EC_KEY* load_key(const char* key_desc, const char* passphrase) {
             ENGINE_finish(engine);
             ENGINE_free(engine);
             std::cerr << "Failed to set PKCS#11 PIN" << std::endl;
-            return nullptr;
+            return -1;
         }
 
         // Load the private key
@@ -153,18 +153,18 @@ EC_KEY* load_key(const char* key_desc, const char* passphrase) {
             ENGINE_finish(engine);
             ENGINE_free(engine);
             std::cerr << "Failed to load private key from PKCS#11" << std::endl;
-            return nullptr;
+            return -1;
         }
 
         // Extract the EC_KEY from the EVP_PKEY
-        ec_key = EVP_PKEY_get1_EC_KEY(pkey);
+        *ec_key = EVP_PKEY_get1_EC_KEY(pkey);
         EVP_PKEY_free(pkey);
 
-        if (!ec_key) {
+        if (!*ec_key) {
             ENGINE_finish(engine);
             ENGINE_free(engine);
             std::cerr << "Failed to extract EC_KEY from EVP_PKEY" << std::endl;
-            return nullptr;
+            return -1;
         }
     } 
     else {
@@ -172,18 +172,23 @@ EC_KEY* load_key(const char* key_desc, const char* passphrase) {
         FILE* key_fp = fopen(key_desc, "r");
         if (!key_fp) {
             std::cerr << "Failed to open key file" << std::endl;
-            return nullptr;
+            return -1;
         }
 
-        ec_key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, (void*)passphrase);
+        *ec_key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, (void*)passphrase);
         fclose(key_fp);
-        if (!ec_key) {
+        if (!*ec_key) {
             std::cerr << "Failed to read key from file" << std::endl;
-            return nullptr;
+            return -1;
         }
     }
 
-    return ec_key;
+    // Securely erase the passphrase
+    if (passphrase) {
+        std::memset((void*)passphrase, 0, std::strlen(passphrase));
+    }
+
+    return 0;
 }
 
 int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
@@ -195,10 +200,10 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
         std::cerr << "Key file path is empty" << std::endl;
         return -1;
     }
-    EC_KEY* key = load_key(key_desc, passphrase);
-    if (!key) {
+    EC_KEY* key = nullptr;
+    if (load_key(key_desc, passphrase, &key) != 0) {
         std::cerr << "Failed to load key" << std::endl;
-        return -1;
+        return 1;
     }
 
     STM32Header header = unpack_stm32_header(image);
@@ -285,8 +290,8 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
         std::cerr << "Key file path is empty" << std::endl;
         return -1;
     }
-    EC_KEY* key = load_key(key_desc, passphrase);
-    if (!key) {
+    EC_KEY* key = nullptr;
+    if (load_key(key_desc, passphrase, &key) != 0) {
         std::cerr << "Failed to load key" << std::endl;
         return -1;
     }
