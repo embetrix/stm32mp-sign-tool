@@ -128,7 +128,7 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
 
 int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
     *ec_key = nullptr;
-    if (!key_desc || !ec_key) {
+    if (!key_desc || std::strlen(key_desc) == 0) {
         std::cerr << "Invalid arguments" << std::endl;
         return -1;
     }
@@ -186,7 +186,7 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
             return -1;
         }
 
-        *ec_key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, (void*)passphrase);
+        *ec_key = PEM_read_ECPrivateKey(key_fp, nullptr, nullptr, static_cast<void*>(const_cast<char*>(passphrase)));
         fclose(key_fp);
         if (!*ec_key) {
             std::cerr << "Failed to read key from file" << std::endl;
@@ -276,8 +276,6 @@ int verify_stm32_image(const std::vector<unsigned char>& image, const char* key_
     print_hex("Hash", hash);
     print_hex("Signature", signature);
 
-    // Extract the signature from the header
-    const unsigned char* sig_ptr = header.signature;
     ECDSA_SIG* sig = ECDSA_SIG_new();
 
     if (!sig) {
@@ -356,11 +354,11 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     print_hex("Public Key", pubkey);
 
     std::memcpy(header.ecdsa_pubkey, pubkey.data(), pubkey.size());
-    header.ecdsa_algo = static_cast<uint32_t>(key_algorithm(key));
-    if (header.ecdsa_algo < 0) {
+    if(key_algorithm(key) < 0) {
         EC_KEY_free(key);
         return -1;
     }
+    header.ecdsa_algo = static_cast<uint32_t>(key_algorithm(key));
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
     repack_stm32_header(image, header);
@@ -493,7 +491,7 @@ int main(int argc, char* argv[]) {
 
     // Securely erase the passphrase
     if (passphrase) {
-        std::memset((void*)passphrase, 0, std::strlen(passphrase));
+        std::memset(static_cast<void*>(const_cast<char*>(passphrase)), 0, std::strlen(passphrase));
     }
 
     return 0;
