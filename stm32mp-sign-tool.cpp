@@ -363,7 +363,6 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     }
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
-    header.binary_type = 0x10; // 0x10-0x1F: FSBL
     repack_stm32_header(image, header);
 
     // Ensure the buffer to hash is correctly constructed
