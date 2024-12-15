@@ -2,7 +2,9 @@
 
 ## Overview
 
-The `stm32mp-sign-tool` is a utility for signing and verifying firmware images for STM32MP MPUs. It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integrity and authenticity of the firmware.
+The `stm32mp-sign-tool` is a lightweight open-source alternative to `STM32_SigningTool_CLI` that does not require the full `STM32CubeProgrammer` installation and dependencies. 
+It is an utility for signing and verifying firmware images for STM32MP MPUs. 
+It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integrity and authenticity of the firmware.
 
 **Disclaimer:** This tool is entirely developed based on the [public specification](https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files) of the STM32 header format. It does not use reverse engineering or incorporate any proprietary code. Additionally, it does not implement all the functionalities of the [official ST Tools](https://wiki.st.com/stm32mpu/wiki/Signing_tool). Use this utility with care, as it is not affiliated with nor endorsed by STMicroelectronics.
 
@@ -43,6 +45,12 @@ make
 ctest -V
 ```
 
+## Install
+
+```sh
+sudo make install
+```
+
 ## Usage
 
 ### Sign a Firmware Image
@@ -56,7 +64,7 @@ openssl ecparam -name prime256v1 -genkey -out <private_key.pem>
 Sign a firmware image using the following command:
 
 ```sh
-./stm32mp-sign-tool -k <private_key_file> -i <image.stm32> -o <image.stm32.signed>
+stm32mp-sign-tool -k <private_key_file> -i <image.stm32> -o <image.stm32.signed>
 ```
 
 ### Sign a Firmware Image using a HSM Token
@@ -70,18 +78,18 @@ pkcs11-tool --pin <pin> --module <Module Path> --keypairgen --key-type EC:prime2
 Sign a firmware image using the URI of the key:
 
 ```sh
-./stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -i <image.stm32> -o <image.stm32.signed>
+stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -i <image.stm32> -o <image.stm32.signed>
 ```
 
 ### Generating the public key hashes
 
 ```sh
-./stm32mp-sign-tool -v -k <private_key_file> -h <hash output>
+stm32mp-sign-tool -v -k <private_key_file> -h <hash output>
 ```
 or
 
 ```sh
-./stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -h <hash output>
+stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -h <hash output>
 ```
 
 ## License
