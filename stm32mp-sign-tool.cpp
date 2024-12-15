@@ -346,8 +346,6 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     header.reserved1 = 0;
     header.reserved2 = 0;
 
-    // Set header version
-    header.hdr_version = HDR_VERSION;
 
     // Get the public key from the private key
     std::vector<unsigned char> pubkey = get_raw_pubkey(key);
