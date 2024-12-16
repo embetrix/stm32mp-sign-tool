@@ -84,6 +84,10 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
 }
 
 int get_ec_pubkey(EC_KEY** ec_key, uint32_t algo, const unsigned char* pubkey, size_t pubkey_len) {
+    if (!pubkey) {
+        std::cerr << "Public key is empty" << std::endl;
+        return -1;
+    }
     if (pubkey_len != 64) {
         std::cerr << "Invalid public key length" << std::endl;
         return -1;
@@ -159,6 +163,10 @@ int get_ec_pubkey(EC_KEY** ec_key, uint32_t algo, const unsigned char* pubkey, s
 }
 
 std::vector<unsigned char> get_raw_pubkey(EC_KEY* key) {
+    if (!key) {
+        std::cerr << "Invalid EC_KEY" << std::endl;
+        return {};
+    }
     const EC_POINT* point = EC_KEY_get0_public_key(key);
     const EC_GROUP* group = EC_KEY_get0_group(key);
     std::vector<unsigned char> pubkey(64);
@@ -188,6 +196,10 @@ std::vector<unsigned char> get_raw_pubkey(EC_KEY* key) {
 }
 
 int key_algorithm(EC_KEY* key) {
+    if (!key) {
+        std::cerr << "Invalid EC_KEY" << std::endl;
+        return -1;
+    }
     const EC_GROUP* group = EC_KEY_get0_group(key);
     int nid = EC_GROUP_get_curve_name(group);
     if (nid == NID_X9_62_prime256v1) {
