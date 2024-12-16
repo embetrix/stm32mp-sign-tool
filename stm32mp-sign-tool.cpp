@@ -44,7 +44,6 @@ static ENGINE* engine = nullptr;
 /*                                                                 */
 /*******************************************************************/
 #define STM32_MAGIC "STM2" // 0x53544D32
-#define HDR_VERSION  0x00010000 // Header version v1.0 
 
 struct STM32Header {
     char magic[4];
