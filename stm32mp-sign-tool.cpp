@@ -64,35 +64,6 @@ struct STM32Header {
     unsigned char binary_type;
 } __attribute__((packed));
 
-std::vector<unsigned char> get_raw_pubkey(EC_KEY* key) {
-    const EC_POINT* point = EC_KEY_get0_public_key(key);
-    const EC_GROUP* group = EC_KEY_get0_group(key);
-    std::vector<unsigned char> pubkey(64);
-    BIGNUM* x = BN_new();
-    BIGNUM* y = BN_new();
-    if (!x || !y) {
-        if (x) BN_free(x);
-        if (y) BN_free(y);
-        std::cerr << "Failed to allocate BIGNUM" << std::endl;
-        return {};
-    }
-    if (!EC_POINT_get_affine_coordinates_GFp(group, point, x, y, nullptr)) {
-        BN_free(x);
-        BN_free(y);
-        std::cerr << "Failed to get affine coordinates" << std::endl;
-        return {};
-    }
-    if (BN_bn2binpad(x, pubkey.data(), 32) != 32 || BN_bn2binpad(y, pubkey.data() + 32, 32) != 32) {
-        BN_free(x);
-        BN_free(y);
-        std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
-        return {};
-    }
-    BN_free(x);
-    BN_free(y);
-    return pubkey;
-}
-
 STM32Header unpack_stm32_header(const std::vector<unsigned char>& image) {
     STM32Header header;
     std::memcpy(&header, image.data(), sizeof(STM32Header));
@@ -101,6 +72,16 @@ STM32Header unpack_stm32_header(const std::vector<unsigned char>& image) {
 
 void repack_stm32_header(std::vector<unsigned char>& image, const STM32Header& header) {
     std::memcpy(image.data(), &header, sizeof(STM32Header));
+}
+
+void print_hex(const std::string& label, const std::vector<unsigned char>& data) {
+    if (!verbose) 
+        return;
+    std::cout << label << ": ";
+    for (unsigned char byte : data) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
+    }
+    std::cout << std::dec << std::endl;
 }
 
 int get_ec_pubkey(EC_KEY** ec_key, uint32_t algo, const unsigned char* pubkey, size_t pubkey_len) {
@@ -178,6 +159,35 @@ int get_ec_pubkey(EC_KEY** ec_key, uint32_t algo, const unsigned char* pubkey, s
     return 0;
 }
 
+std::vector<unsigned char> get_raw_pubkey(EC_KEY* key) {
+    const EC_POINT* point = EC_KEY_get0_public_key(key);
+    const EC_GROUP* group = EC_KEY_get0_group(key);
+    std::vector<unsigned char> pubkey(64);
+    BIGNUM* x = BN_new();
+    BIGNUM* y = BN_new();
+    if (!x || !y) {
+        if (x) BN_free(x);
+        if (y) BN_free(y);
+        std::cerr << "Failed to allocate BIGNUM" << std::endl;
+        return {};
+    }
+    if (!EC_POINT_get_affine_coordinates_GFp(group, point, x, y, nullptr)) {
+        BN_free(x);
+        BN_free(y);
+        std::cerr << "Failed to get affine coordinates" << std::endl;
+        return {};
+    }
+    if (BN_bn2binpad(x, pubkey.data(), 32) != 32 || BN_bn2binpad(y, pubkey.data() + 32, 32) != 32) {
+        BN_free(x);
+        BN_free(y);
+        std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
+        return {};
+    }
+    BN_free(x);
+    BN_free(y);
+    return pubkey;
+}
+
 int key_algorithm(EC_KEY* key) {
     const EC_GROUP* group = EC_KEY_get0_group(key);
     int nid = EC_GROUP_get_curve_name(group);
@@ -189,16 +199,6 @@ int key_algorithm(EC_KEY* key) {
     }
     std::cerr << "Unsupported ECDSA curve" << std::endl;
     return -1;
-}
-
-void print_hex(const std::string& label, const std::vector<unsigned char>& data) {
-    if (!verbose) 
-        return;
-    std::cout << label << ": ";
-    for (unsigned char byte : data) {
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte);
-    }
-    std::cout << std::dec << std::endl;
 }
 
 int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
