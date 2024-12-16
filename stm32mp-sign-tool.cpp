@@ -297,6 +297,10 @@ int hash_pubkey(const char* key_desc, const char* passphrase, const std::string 
     print_hex("Pubkey(sha256)", phash);
 
     std::ofstream output(output_file, std::ios::binary);
+    if (!output) {
+        std::cerr << "Failed to open output file: " << output_file << std::endl;
+        return -1;
+    }
     output.write(reinterpret_cast<const char*>(phash.data()), static_cast<std::streamsize>(phash.size()));
     output.close();
 
