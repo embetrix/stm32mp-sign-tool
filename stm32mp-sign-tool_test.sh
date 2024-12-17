@@ -29,4 +29,4 @@ mkdir -p .softhsm/tokens
 echo "directories.tokendir = $PWD/.softhsm/tokens" > .softhsm/softhsm2.conf
 pkcs11-tool --pin $PIN --module $PKCS11_MODULE_PATH --slot-index=0 --init-token --label=$TOKEN_NAME --so-pin $SO_PIN --init-pin
 pkcs11-tool --pin $PIN --module $PKCS11_MODULE_PATH --keypairgen --key-type EC:prime256v1 --id 1 --label "testkeyECp256"
-./stm32mp-sign-tool -v -k  "pkcs11:object=testkeyECp256" -i image.stm32 -p 12345 -o image.stm32.signed
+./stm32mp-sign-tool -v -k  "pkcs11:object=testkeyECp256" -p 12345 -i image.stm32  -o image.stm32.signed -h hash.bin
