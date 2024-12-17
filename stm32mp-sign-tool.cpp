@@ -35,16 +35,20 @@
 #include <openssl/ecdsa.h>
 #include <openssl/engine.h>
 
+#define STM32_MAGIC "STM2" // 0x53544D32
+
 static bool verbose = false;
 static ENGINE* engine = nullptr;
 
-/*******************************************************************/
-/* STM32 header format (STM32MP15x)                                */
-/* https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files */
-/*                                                                 */
-/*******************************************************************/
-#define STM32_MAGIC "STM2" // 0x53544D32
-
+/*******************************************************************
+ * https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files *
+ *                                                                 *
+ * Notes:                                                          *
+ * - The signature is calculated over the data starting at offset  *
+ *   0x48 (hdr_version field) up to the end of the image.          *
+ * - The ecdsa_pubkey contains the public key (x, y) coordinates   *
+ *   of the ECDSA key (64 bytes total).                            *
+ *******************************************************************/
 struct STM32Header {
     char magic[4];
     unsigned char signature[64];
