@@ -475,11 +475,8 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     EC_KEY_free(key);
 
     // Verify the signature
-    if (verify_stm32_image(image)) {
-        return -1;
-    }
+    return verify_stm32_image(image);
 
-    return 0;
 }
 
 void usage(const char* argv0) {
