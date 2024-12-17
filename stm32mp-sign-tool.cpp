@@ -465,9 +465,10 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     print_hex("ECC key(r)", r_bytes);
     print_hex("ECC key(s)", s_bytes);
 
-    std::vector<unsigned char> signature(r_bytes.size() + s_bytes.size());
-    std::memcpy(signature.data(), r_bytes.data(), r_bytes.size());
-    std::memcpy(signature.data() + r_bytes.size(), s_bytes.data(), s_bytes.size());
+    std::vector<unsigned char> signature(sizeof(header.signature));
+    std::memset(signature.data(), 0, signature.size());
+    std::memcpy(signature.data() + (sizeof(header.signature) / 2 - r_bytes.size()), r_bytes.data(), r_bytes.size());
+    std::memcpy(signature.data() + sizeof(header.signature) / 2  + (sizeof(header.signature) / 2 - s_bytes.size()), s_bytes.data(), s_bytes.size());
     print_hex("Signature", signature);
 
     std::memcpy(image.data() + offsetof(STM32Header, signature), signature.data(), signature.size());
