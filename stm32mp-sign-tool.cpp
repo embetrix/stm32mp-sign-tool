@@ -480,7 +480,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
 }
 
 void usage(const char* argv0) {
-    std::cerr << "Usage: " << argv0 << " -k key_desc [-p passphrase/pin] [-v] [-i input_file] [-o output_file]" << std::endl;
+    std::cout << "Usage: " << argv0 << " -k key_desc [-p passphrase/pin] [-v] [-i input_file] [-o output_file] [-h hash_file]" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
