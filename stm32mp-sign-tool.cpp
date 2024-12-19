@@ -564,5 +564,10 @@ int main(int argc, char* argv[]) {
         std::memset(static_cast<void*>(const_cast<char*>(passphrase)), 0, std::strlen(passphrase));
     }
 
+    // Securely erase the key_desc in case it's a pkcs11 uri with pin
+    if (key_desc) {
+        std::memset(static_cast<void*>(const_cast<char*>(key_desc)), 0, std::strlen(key_desc));
+    }
+
     return 0;
 }
