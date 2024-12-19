@@ -1,5 +1,7 @@
 # stm32mp-sign-tool
 
+![pipeline status](https://github.com/embetrix/stm32mp-sign-tool/actions/workflows/cmake-single-platform.yml/badge.svg)
+
 ## Overview
 
 The `stm32mp-sign-tool` is a lightweight open-source alternative to `STM32_SigningTool_CLI` that does not require the full `STM32CubeProgrammer` installation and dependencies. 
