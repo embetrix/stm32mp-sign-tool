@@ -87,7 +87,7 @@ void print_hex(const std::string& label, const std::vector<unsigned char>& data)
     std::cout << std::dec << std::endl;
 }
 
-int get_ec_pubkey(EC_KEY** ec_key, uint32_t algo, const unsigned char* pubkey, size_t pubkey_len) {
+int get_ec_pubkey(const unsigned char* pubkey, size_t pubkey_len, uint32_t algo, EC_KEY** ec_key) {
     if (!pubkey) {
         std::cerr << "Public key is empty" << std::endl;
         return -1;
@@ -372,7 +372,7 @@ int verify_stm32_image(const std::vector<unsigned char>& image) {
         return -1;
     }
     EC_KEY* pubkey = nullptr;
-    if (get_ec_pubkey(&pubkey, header.ecdsa_algo, header.ecdsa_pubkey, sizeof(header.ecdsa_pubkey)) != 0) {
+    if (get_ec_pubkey(header.ecdsa_pubkey, sizeof(header.ecdsa_pubkey), header.ecdsa_algo, &pubkey) != 0) {
         std::cerr << "Failed to get EC_KEY from public key" << std::endl;
         EC_KEY_free(pubkey);
         return -1;
