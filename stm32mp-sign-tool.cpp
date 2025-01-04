@@ -336,7 +336,7 @@ int verify_stm32_image(const std::vector<unsigned char>& image) {
     }
 
     // Signature is calculated from first byte of header version field to last byte of image given by image length field.
-    std::vector<unsigned char> buffer_to_hash(image.begin() + 0x48, image.end());
+    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.end());
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
@@ -548,7 +548,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if(output_hash) {
+    if (output_hash) {
         if (hash_pubkey(key_desc, passphrase, output_hash) != 0) {
             return -1;
         }
