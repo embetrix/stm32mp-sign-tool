@@ -437,7 +437,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
 
     // Ensure the buffer to hash is correctly constructed
     // Signature is calculated from first byte of header version field to last byte of image given by image length field.
-    std::vector<unsigned char> buffer_to_hash(image.begin() + 0x48, image.end());
+    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.end());
 
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
