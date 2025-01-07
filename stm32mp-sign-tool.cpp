@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*
  * (C) Copyright 2024
  * Embetrix Embedded Systems Solutions, ayoub.zaki@embetrix.com
