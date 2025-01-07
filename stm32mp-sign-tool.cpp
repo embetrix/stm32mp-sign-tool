@@ -199,7 +199,7 @@ std::vector<unsigned char> get_raw_pubkey(EC_KEY* key) {
     return pubkey;
 }
 
-int key_algorithm(EC_KEY* key) {
+int get_key_algorithm(EC_KEY* key) {
     if (!key) {
         std::cerr << "Invalid EC_KEY" << std::endl;
         return -1;
@@ -426,11 +426,11 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     print_hex("Public Key", pubkey);
 
     std::memcpy(header.ecdsa_pubkey, pubkey.data(), pubkey.size());
-    if(key_algorithm(key) < 0) {
+    if(get_key_algorithm(key) < 0) {
         EC_KEY_free(key);
         return -1;
     }
-    header.ecdsa_algo = static_cast<uint32_t>(key_algorithm(key));
+    header.ecdsa_algo = static_cast<uint32_t>(get_key_algorithm(key));
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
     repack_stm32_header(image, header);
