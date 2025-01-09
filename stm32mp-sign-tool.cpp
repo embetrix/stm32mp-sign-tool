@@ -562,12 +562,12 @@ int main(int argc, char* argv[]) {
 
     // Securely erase the passphrase
     if (passphrase) {
-        std::memset(static_cast<void*>(const_cast<char*>(passphrase)), 0, std::strlen(passphrase));
+        OPENSSL_cleanse(static_cast<void*>(const_cast<char*>(passphrase)), std::strlen(passphrase));
     }
 
     // Securely erase the key_desc in case it's a pkcs11 uri with pin
     if (key_desc) {
-        std::memset(static_cast<void*>(const_cast<char*>(key_desc)), 0, std::strlen(key_desc));
+        OPENSSL_cleanse(static_cast<void*>(const_cast<char*>(key_desc)), std::strlen(key_desc));
     }
 
     return 0;
