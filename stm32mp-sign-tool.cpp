@@ -80,7 +80,7 @@ void repack_stm32_header(std::vector<unsigned char>& image, const STM32Header& h
 }
 
 void print_hex(const std::string& label, const std::vector<unsigned char>& data) {
-    if (!verbose) 
+    if (!verbose)
         return;
     std::cout << label << ": ";
     for (unsigned char byte : data) {
@@ -218,7 +218,97 @@ int get_key_algorithm(EC_KEY* key) {
     return -1;
 }
 
-int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
+// Parse DER-encoded ECDSA signature and convert to raw 64-byte format (32 bytes r + 32 bytes s)
+// DER format: 0x30 <len> 0x02 <r_len> <r> 0x02 <s_len> <s>
+std::vector<unsigned char> parse_der_signature(const std::vector<unsigned char>& der_sig) {
+    if (der_sig.size() < 8) {
+        std::cerr << "DER signature too short" << std::endl;
+        return {};
+    }
+
+    // Check if it's already raw format (64 bytes)
+    if (der_sig.size() == 64) {
+        // Assume it's already in raw format
+        return der_sig;
+    }
+
+    // Check DER header
+    if (der_sig[0] != 0x30) {
+        std::cerr << "Invalid DER signature: missing SEQUENCE tag" << std::endl;
+        return {};
+    }
+
+    size_t idx = 2; // Skip 0x30 and length byte
+
+    // Parse r
+    if (idx >= der_sig.size() || der_sig[idx] != 0x02) {
+        std::cerr << "Invalid DER signature: missing INTEGER tag for r" << std::endl;
+        return {};
+    }
+    idx++;
+
+    if (idx >= der_sig.size()) {
+        std::cerr << "Invalid DER signature: truncated" << std::endl;
+        return {};
+    }
+
+    size_t r_len = der_sig[idx++];
+    if (idx + r_len > der_sig.size()) {
+        std::cerr << "Invalid DER signature: r length exceeds data" << std::endl;
+        return {};
+    }
+
+    std::vector<unsigned char> r_bytes(der_sig.begin() + static_cast<std::ptrdiff_t>(idx), der_sig.begin() + static_cast<std::ptrdiff_t>(idx + r_len));
+    idx += r_len;
+
+    // Parse s
+    if (idx >= der_sig.size() || der_sig[idx] != 0x02) {
+        std::cerr << "Invalid DER signature: missing INTEGER tag for s" << std::endl;
+        return {};
+    }
+    idx++;
+
+    if (idx >= der_sig.size()) {
+        std::cerr << "Invalid DER signature: truncated" << std::endl;
+        return {};
+    }
+
+    size_t s_len = der_sig[idx++];
+    if (idx + s_len > der_sig.size()) {
+        std::cerr << "Invalid DER signature: s length exceeds data" << std::endl;
+        return {};
+    }
+
+    std::vector<unsigned char> s_bytes(der_sig.begin() + static_cast<std::ptrdiff_t>(idx), der_sig.begin() + static_cast<std::ptrdiff_t>(idx + s_len));
+
+    // Remove leading zero bytes (DER encoding adds 0x00 for positive numbers with MSB set)
+    while (r_bytes.size() > 32 && r_bytes[0] == 0x00) {
+        r_bytes.erase(r_bytes.begin());
+    }
+    while (s_bytes.size() > 32 && s_bytes[0] == 0x00) {
+        s_bytes.erase(s_bytes.begin());
+    }
+
+    // Check if r and s fit in 32 bytes
+    if (r_bytes.size() > 32 || s_bytes.size() > 32) {
+        std::cerr << "Invalid DER signature: r or s too large (r=" << r_bytes.size()
+                  << ", s=" << s_bytes.size() << ")" << std::endl;
+        return {};
+    }
+
+    // Create 64-byte raw signature (32 bytes r + 32 bytes s)
+    std::vector<unsigned char> raw_sig(64, 0);
+
+    // Copy r (right-aligned in first 32 bytes)
+    std::copy(r_bytes.begin(), r_bytes.end(), raw_sig.begin() + static_cast<std::ptrdiff_t>(32 - r_bytes.size()));
+
+    // Copy s (right-aligned in second 32 bytes)
+    std::copy(s_bytes.begin(), s_bytes.end(), raw_sig.begin() + static_cast<std::ptrdiff_t>(32 + (32 - s_bytes.size())));
+
+    return raw_sig;
+}
+
+int load_private_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
     *ec_key = nullptr;
     if (!key_desc || std::strlen(key_desc) == 0) {
         std::cerr << "Invalid arguments" << std::endl;
@@ -269,7 +359,7 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
             std::cerr << "Failed to extract EC_KEY from EVP_PKEY" << std::endl;
             return -1;
         }
-    } 
+    }
     else {
         // Load key from file
         FILE* key_fp = fopen(key_desc, "r");
@@ -289,21 +379,109 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
     return 0;
 }
 
-int hash_pubkey(const char* key_desc, const char* passphrase, const std::string &output_file) {
-    if (!key_desc || output_file.empty()) {
+int load_public_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
+    *ec_key = nullptr;
+    if (!key_desc || std::strlen(key_desc) == 0) {
         std::cerr << "Invalid arguments" << std::endl;
         return -1;
     }
-    EC_KEY* key = nullptr;
-    if (load_key(key_desc, passphrase, &key) != 0) {
-        std::cerr << "Failed to load key" << std::endl;
+
+    if (std::strncmp(key_desc, "pkcs11:", 7) == 0) {
+        // Load key using PKCS#11
+
+        // Load the engine
+        ENGINE_load_builtin_engines();
+        engine = ENGINE_by_id("pkcs11");
+        if (!engine) {
+            std::cerr << "Failed to load PKCS#11 engine" << std::endl;
+            return -1;
+        }
+
+        // Initialize the engine
+        if (!ENGINE_init(engine)) {
+            ENGINE_free(engine);
+            std::cerr << "Failed to initialize PKCS#11 engine" << std::endl;
+            return -1;
+        }
+
+        // Set the PIN
+        if (passphrase && !ENGINE_ctrl_cmd_string(engine, "PIN", passphrase, 0)) {
+            ENGINE_finish(engine);
+            ENGINE_free(engine);
+            std::cerr << "Failed to set PKCS#11 PIN" << std::endl;
+            return -1;
+        }
+
+        // Load the public key
+        EVP_PKEY* pkey = ENGINE_load_public_key(engine, key_desc, nullptr, nullptr);
+        if (!pkey) {
+            ENGINE_finish(engine);
+            ENGINE_free(engine);
+            std::cerr << "Failed to load public key from PKCS#11" << std::endl;
+            return -1;
+        }
+
+        // Extract the EC_KEY from the EVP_PKEY
+        *ec_key = EVP_PKEY_get1_EC_KEY(pkey);
+        EVP_PKEY_free(pkey);
+
+        if (!*ec_key) {
+            ENGINE_finish(engine);
+            ENGINE_free(engine);
+            std::cerr << "Failed to extract EC_KEY from EVP_PKEY" << std::endl;
+            return -1;
+        }
+    }
+    else {
+        // Load public key from file
+        FILE* key_fp = fopen(key_desc, "r");
+        if (!key_fp) {
+            std::cerr << "Failed to open public key file" << std::endl;
+            return -1;
+        }
+
+        *ec_key = PEM_read_EC_PUBKEY(key_fp, nullptr, nullptr, nullptr);
+        fclose(key_fp);
+        if (!*ec_key) {
+            std::cerr << "Failed to read public key from file" << std::endl;
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+int hash_pubkey(const char* private_key_desc, const char* public_key_desc, const char* passphrase, const std::string &output_file) {
+    if ((!private_key_desc && !public_key_desc) || output_file.empty()) {
+        std::cerr << "Invalid arguments" << std::endl;
         return -1;
     }
+
+    EC_KEY* key = nullptr;
+
+    // Try to load public key first if provided
+    if (public_key_desc && std::strlen(public_key_desc) > 0) {
+        if (load_public_key(public_key_desc, passphrase, &key) != 0) {
+            std::cerr << "Failed to load public key" << std::endl;
+            return -1;
+        }
+    }
+    // Otherwise load from private key
+    else if (private_key_desc && std::strlen(private_key_desc) > 0) {
+        if (load_private_key(private_key_desc, passphrase, &key) != 0) {
+            std::cerr << "Failed to load private key" << std::endl;
+            return -1;
+        }
+    }
+
     if (!key) {
         std::cerr << "Invalid key" << std::endl;
         return -1;
     }
-    std::vector<unsigned char> pubkey = get_raw_pubkey(const_cast<EC_KEY*>(key));
+
+    std::vector<unsigned char> pubkey = get_raw_pubkey(key);
+    EC_KEY_free(key);
+
     if (pubkey.empty()) {
         std::cerr << "Failed to get raw public key" << std::endl;
         return -1;
@@ -322,7 +500,7 @@ int hash_pubkey(const char* key_desc, const char* passphrase, const std::string 
     output.close();
 
     return 0;
- 
+
 }
 
 int verify_stm32_image(const std::vector<unsigned char>& image) {
@@ -396,18 +574,66 @@ int verify_stm32_image(const std::vector<unsigned char>& image) {
     }
 }
 
-int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
+int sign_stm32_image(std::vector<unsigned char>& image, const char* private_key_desc, const char* public_key_desc, const char* passphrase, const char* output_hash_to_sign = nullptr, const char* input_signature = nullptr) {
     if (image.empty()) {
         std::cerr << "Image data is empty" << std::endl;
         return -1;
     }
-    if (!key_desc || std::strlen(key_desc) == 0) {
-        std::cerr << "Key file path is empty" << std::endl;
+
+    // Must have at least a public key
+    if (!public_key_desc && !private_key_desc) {
+        std::cerr << "Must specify either a public key or private key" << std::endl;
         return -1;
     }
-    EC_KEY* key = nullptr;
-    if (load_key(key_desc, passphrase, &key) != 0) {
-        std::cerr << "Failed to load key" << std::endl;
+
+    EC_KEY* public_key = nullptr;
+    EC_KEY* private_key = nullptr;
+
+    // Load public key if provided
+    if (public_key_desc && std::strlen(public_key_desc) > 0) {
+        if (load_public_key(public_key_desc, passphrase, &public_key) != 0) {
+            std::cerr << "Failed to load public key" << std::endl;
+            return -1;
+        }
+    }
+
+    // Load private key if provided (only needed for signing)
+    if (private_key_desc && std::strlen(private_key_desc) > 0) {
+        if (load_private_key(private_key_desc, passphrase, &private_key) != 0) {
+            std::cerr << "Failed to load private key" << std::endl;
+            if (public_key) EC_KEY_free(public_key);
+            return -1;
+        }
+
+        // If no separate public key was provided, extract public key from private key
+        if (!public_key) {
+            // Get the raw public key bytes using existing function
+            std::vector<unsigned char> pubkey_bytes = get_raw_pubkey(private_key);
+            if (pubkey_bytes.empty()) {
+                std::cerr << "Failed to extract public key from private key" << std::endl;
+                EC_KEY_free(private_key);
+                return -1;
+            }
+
+            // Get the algorithm to determine the curve
+            int algo = get_key_algorithm(private_key);
+            if (algo < 0) {
+                std::cerr << "Failed to get algorithm from private key" << std::endl;
+                EC_KEY_free(private_key);
+                return -1;
+            }
+
+            // Recreate the public key using the extracted bytes
+            if (get_ec_pubkey(pubkey_bytes.data(), pubkey_bytes.size(), static_cast<uint32_t>(algo), &public_key) != 0) {
+                std::cerr << "Failed to create public key from private key" << std::endl;
+                EC_KEY_free(private_key);
+                return -1;
+            }
+        }
+    }
+
+    if (!public_key) {
+        std::cerr << "No valid key available" << std::endl;
         return -1;
     }
 
@@ -415,7 +641,8 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
 
     if (std::strncmp(header.magic, STM32_MAGIC, sizeof(header.magic)) != 0) {
         std::cerr << "Not an STM32 header (signature FAIL)" << std::endl;
-        EC_KEY_free(key);
+        if (public_key) EC_KEY_free(public_key);
+        if (private_key) EC_KEY_free(private_key);
         return -1;
     }
 
@@ -424,20 +651,22 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     header.reserved2 = 0;
 
 
-    // Get the public key from the private key
-    std::vector<unsigned char> pubkey = get_raw_pubkey(key);
+    // Get the public key
+    std::vector<unsigned char> pubkey = get_raw_pubkey(public_key);
     if (pubkey.empty()) {
-        EC_KEY_free(key);
+        if (public_key) EC_KEY_free(public_key);
+        if (private_key) EC_KEY_free(private_key);
         return -1;
     }
     print_hex("Public Key", pubkey);
 
     std::memcpy(header.ecdsa_pubkey, pubkey.data(), pubkey.size());
-    if(get_key_algorithm(key) < 0) {
-        EC_KEY_free(key);
+    if(get_key_algorithm(public_key) < 0) {
+        if (public_key) EC_KEY_free(public_key);
+        if (private_key) EC_KEY_free(private_key);
         return -1;
     }
-    header.ecdsa_algo = static_cast<uint32_t>(get_key_algorithm(key));
+    header.ecdsa_algo = static_cast<uint32_t>(get_key_algorithm(public_key));
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
     repack_stm32_header(image, header);
@@ -446,7 +675,8 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     size_t hash_end = sizeof(STM32Header) + header.length;
     if (hash_end > image.size()) {
         std::cerr << "Image too short: expected at least " << hash_end << " bytes, got " << image.size() << std::endl;
-        EC_KEY_free(key);
+        if (public_key) EC_KEY_free(public_key);
+        if (private_key) EC_KEY_free(private_key);
         return -1;
     }
     std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
@@ -454,58 +684,151 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
-        EC_KEY_free(key);
+        if (public_key) EC_KEY_free(public_key);
+        if (private_key) EC_KEY_free(private_key);
         return -1;
     }
     print_hex("Hash(sha256)", hash);
 
-    ECDSA_SIG* sig = ECDSA_do_sign(hash.data(), SHA256_DIGEST_LENGTH, key);
-    if (sig == nullptr) {
-        std::cerr << "Failed to sign the image" << std::endl;
-        EC_KEY_free(key);
-        return -1;
+    // Write hash to file only if output_hash_to_sign is specified
+    if (output_hash_to_sign) {
+        std::ofstream hash_file(output_hash_to_sign, std::ios::binary);
+        if (hash_file) {
+            hash_file.write(reinterpret_cast<const char*>(hash.data()), static_cast<std::streamsize>(hash.size()));
+            hash_file.close();
+            std::cout << "Hash written to: " << output_hash_to_sign << std::endl;
+        } else {
+            std::cerr << "Warning: Failed to write hash to " << output_hash_to_sign << std::endl;
+        }
+
+        // If we're only generating the hash, stop here
+        if (!input_signature && !private_key) {
+            std::cout << "Hash generation complete. No signature will be applied." << std::endl;
+            // Clean up keys
+            if (public_key) EC_KEY_free(public_key);
+            if (private_key) EC_KEY_free(private_key);
+            return 0;
+        }
     }
 
-    const BIGNUM* r;
-    const BIGNUM* s;
-    ECDSA_SIG_get0(sig, &r, &s);
+    // Apply signature from file if provided
+    if (input_signature) {
+        std::ifstream sig_file(input_signature, std::ios::binary);
+        if (!sig_file) {
+            std::cerr << "Failed to open signature file: " << input_signature << std::endl;
+            if (public_key) EC_KEY_free(public_key);
+            if (private_key) EC_KEY_free(private_key);
+            return -1;
+        }
 
-    std::vector<unsigned char> r_bytes(static_cast<size_t>(BN_num_bytes(r)));
-    std::vector<unsigned char> s_bytes(static_cast<size_t>(BN_num_bytes(s)));
-    if (BN_bn2binpad(r, r_bytes.data(), static_cast<int>(r_bytes.size())) < 0 || BN_bn2binpad(s, s_bytes.data(), static_cast<int>(s_bytes.size())) < 0) {
-        std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
+        std::vector<unsigned char> signature_data((std::istreambuf_iterator<char>(sig_file)), std::istreambuf_iterator<char>());
+        sig_file.close();
+
+        // Parse signature (handles both DER and raw formats)
+        std::vector<unsigned char> signature = parse_der_signature(signature_data);
+        if (signature.empty()) {
+            std::cerr << "Failed to parse signature file" << std::endl;
+            if (public_key) EC_KEY_free(public_key);
+            if (private_key) EC_KEY_free(private_key);
+            return -1;
+        }
+
+        if (signature.size() != sizeof(header.signature)) {
+            std::cerr << "Invalid signature size after parsing: expected " << sizeof(header.signature)
+                      << " bytes, got " << signature.size() << " bytes" << std::endl;
+            if (public_key) EC_KEY_free(public_key);
+            if (private_key) EC_KEY_free(private_key);
+            return -1;
+        }
+
+        print_hex("External Signature", signature);
+        std::memcpy(image.data() + offsetof(STM32Header, signature), signature.data(), signature.size());
+
+        std::cout << "External signature applied from: " << input_signature << std::endl;
+    }
+    // Only sign with private key if available and no external signature provided
+    else if (private_key) {
+        ECDSA_SIG* sig = ECDSA_do_sign(hash.data(), SHA256_DIGEST_LENGTH, private_key);
+        if (sig == nullptr) {
+            std::cerr << "Failed to sign the image" << std::endl;
+            if (public_key) EC_KEY_free(public_key);
+            if (private_key) EC_KEY_free(private_key);
+            return -1;
+        }
+
+        const BIGNUM* r;
+        const BIGNUM* s;
+        ECDSA_SIG_get0(sig, &r, &s);
+
+        std::vector<unsigned char> r_bytes(static_cast<size_t>(BN_num_bytes(r)));
+        std::vector<unsigned char> s_bytes(static_cast<size_t>(BN_num_bytes(s)));
+        if (BN_bn2binpad(r, r_bytes.data(), static_cast<int>(r_bytes.size())) < 0 || BN_bn2binpad(s, s_bytes.data(), static_cast<int>(s_bytes.size())) < 0) {
+            std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
+            ECDSA_SIG_free(sig);
+            if (public_key) EC_KEY_free(public_key);
+            if (private_key) EC_KEY_free(private_key);
+            return -1;
+        }
+        print_hex("ECC key(r)", r_bytes);
+        print_hex("ECC key(s)", s_bytes);
+
+        std::vector<unsigned char> signature(sizeof(header.signature));
+        std::memset(signature.data(), 0, signature.size());
+        std::memcpy(signature.data() + (sizeof(header.signature) / 2 - r_bytes.size()), r_bytes.data(), r_bytes.size());
+        std::memcpy(signature.data() + sizeof(header.signature) - s_bytes.size(), s_bytes.data(), s_bytes.size());
+        print_hex("Signature", signature);
+
+        std::memcpy(image.data() + offsetof(STM32Header, signature), signature.data(), signature.size());
         ECDSA_SIG_free(sig);
-        EC_KEY_free(key);
-        return -1;
+    } else {
+        std::cout << "No private key provided and no external signature - signature not generated (public key embedded only)" << std::endl;
     }
-    print_hex("ECC key(r)", r_bytes);
-    print_hex("ECC key(s)", s_bytes);
 
-    std::vector<unsigned char> signature(sizeof(header.signature));
-    std::memset(signature.data(), 0, signature.size());
-    std::memcpy(signature.data() + (sizeof(header.signature) / 2 - r_bytes.size()), r_bytes.data(), r_bytes.size());
-    std::memcpy(signature.data() + sizeof(header.signature) - s_bytes.size(), s_bytes.data(), s_bytes.size());
-    print_hex("Signature", signature);
+    // Save if we need to verify (before cleaning up keys)
+    bool should_verify = (private_key != nullptr || input_signature != nullptr);
 
-    std::memcpy(image.data() + offsetof(STM32Header, signature), signature.data(), signature.size());
-    ECDSA_SIG_free(sig);
-    EC_KEY_free(key);
+    // Clean up keys
+    if (public_key) EC_KEY_free(public_key);
+    if (private_key) EC_KEY_free(private_key);
 
-    // Verify the signature
-    return verify_stm32_image(image);
+    // Verify the signature only if it was signed
+    if (should_verify) {
+        return verify_stm32_image(image);
+    }
 
+    return 0;
 }
 
 void usage(const char* argv0) {
-    std::cout << "Usage: " << argv0 << " -k key_desc [-p passphrase/pin] [-v] [-i input_file] [-o output_file] [-h hash_file]" << std::endl;
+    std::cout << "Usage: " << argv0 << " [-k private_key] [-u public_key] [-p passphrase/pin] [-v] [-i input_file] [-o output_file] [-h hash_file] [-s output_hash_to_sign] [-d input_signature]" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Options:" << std::endl;
+    std::cout << "  -k  Private key file or PKCS#11 URI (required for signing)" << std::endl;
+    std::cout << "  -u  Public key file (required for public key hash and sha to sign generation)" << std::endl;
+    std::cout << "  -p  Passphrase or PIN for private key" << std::endl;
+    std::cout << "  -v  Verbose mode" << std::endl;
+    std::cout << "  -i  Input image file" << std::endl;
+    std::cout << "  -o  Output signed image file" << std::endl;
+    std::cout << "  -h  Output file for public key hash" << std::endl;
+    std::cout << "  -s  Output file for hash to sign" << std::endl;
+    std::cout << "  -d  Input signature file (DER or raw format)" << std::endl;
+    std::cout << std::endl;
+    std::cout << "Two-step signing workflow:" << std::endl;
+    std::cout << "  Step 1: Generate hash to sign" << std::endl;
+    std::cout << "    " << argv0 << " -u public_key.pem -i input.stm32 -s hash.bin" << std::endl;
+    std::cout << "  Step 2: Apply external signature" << std::endl;
+    std::cout << "    " << argv0 << " -u public_key.pem -i input.stm32 -d signature.der -o output-signed.stm32" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
-    const char* key_desc = nullptr;
+    const char* private_key_desc = nullptr;
+    const char* public_key_desc = nullptr;
     const char* passphrase = nullptr;
     const char* input_file = nullptr;
     const char* output_file = nullptr;
     const char* output_hash = nullptr;
+    const char* output_hash_to_sign = nullptr;
+    const char* input_signature = nullptr;
 
     int opt;
     if (argc == 1) {
@@ -513,10 +836,13 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    while ((opt = getopt(argc, argv, "k:p:h:vi:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "k:u:p:h:s:d:vi:o:")) != -1) {
         switch (opt) {
             case 'k':
-                key_desc = optarg;
+                private_key_desc = optarg;
+                break;
+            case 'u':
+                public_key_desc = optarg;
                 break;
             case 'p':
                 passphrase = optarg;
@@ -526,6 +852,12 @@ int main(int argc, char* argv[]) {
                 break;
             case 'h':
                 output_hash = optarg;
+                break;
+            case 's':
+                output_hash_to_sign = optarg;
+                break;
+            case 'd':
+                input_signature = optarg;
                 break;
             case 'i':
                 input_file = optarg;
@@ -539,8 +871,29 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (!key_desc) {
-        std::cerr << "Must specify a key file or pkcs11 uri" << std::endl;
+    // Validate arguments
+    if (input_file) {
+        // When processing an input file, we need a public key (can come from private key or explicit public key)
+        // AND either a private key for signing OR an external signature
+        if (!private_key_desc && !public_key_desc) {
+            std::cerr << "Error: Must specify either -k (private key) or -u (public key) when processing an image" << std::endl;
+            return -1;
+        }
+
+        // If we have a public key but no private key, we need either -s (to generate hash) or -d (to apply signature)
+        if (!private_key_desc && public_key_desc && !output_hash_to_sign && !input_signature) {
+            std::cerr << "Error: When using only public key (-u), must specify either -s (generate hash) or -d (apply signature)" << std::endl;
+            return -1;
+        }
+    }
+
+    if (output_hash && !private_key_desc && !public_key_desc) {
+        std::cerr << "Error: Must specify either -k (private key) or -u (public key) when generating public key hash (-h)" << std::endl;
+        return -1;
+    }
+
+    if (input_signature && private_key_desc) {
+        std::cerr << "Error: Cannot specify both -d (external signature) and -k (private key). Use one or the other." << std::endl;
         return -1;
     }
 
@@ -549,7 +902,7 @@ int main(int argc, char* argv[]) {
         std::vector<unsigned char> image((std::istreambuf_iterator<char>(image_file)), std::istreambuf_iterator<char>());
         image_file.close();
 
-        if (sign_stm32_image(image, key_desc, passphrase) != 0) {
+        if (sign_stm32_image(image, private_key_desc, public_key_desc, passphrase, output_hash_to_sign, input_signature) != 0) {
             return -1;
         }
 
@@ -561,7 +914,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (output_hash) {
-        if (hash_pubkey(key_desc, passphrase, output_hash) != 0) {
+        if (hash_pubkey(private_key_desc, public_key_desc, passphrase, output_hash) != 0) {
             return -1;
         }
     }
@@ -577,8 +930,8 @@ int main(int argc, char* argv[]) {
     }
 
     // Securely erase the key_desc in case it's a pkcs11 uri with pin
-    if (key_desc) {
-        OPENSSL_cleanse(static_cast<void*>(const_cast<char*>(key_desc)), std::strlen(key_desc));
+    if (private_key_desc) {
+        OPENSSL_cleanse(static_cast<void*>(const_cast<char*>(private_key_desc)), std::strlen(private_key_desc));
     }
 
     return 0;
