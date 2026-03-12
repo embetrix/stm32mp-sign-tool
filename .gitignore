@@ -1,0 +1,7 @@
+build/
+stm32mp-sign-tool
+*.pem
+*.bin
+*.stm32
+*.stm32.signed
+.softhsm/

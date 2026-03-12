@@ -46,7 +46,8 @@ static ENGINE* engine = nullptr;
  *                                                                 *
  * Notes:                                                          *
  * - The signature is calculated over the data starting at offset  *
- *   0x48 (hdr_version field) up to the end of the image.          *
+ *   0x48 (hdr_version field) up to the last byte given by the     *
+ *   image_length field (i.e. sizeof(header) + header.length).     *
  * - The ecdsa_pubkey contains the public key (x, y) coordinates   *
  *   of the ECDSA key (64 bytes total).                            *
  *******************************************************************/
@@ -336,8 +337,13 @@ int verify_stm32_image(const std::vector<unsigned char>& image) {
         return -1;
     }
 
-    // Signature is calculated from first byte of header version field to last byte of image given by image length field.
-    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.end());
+    // The ROM code hashes exactly 'header.length' bytes after the header (256 bytes), so we must not include trailing padding.
+    size_t hash_end = sizeof(STM32Header) + header.length;
+    if (hash_end > image.size()) {
+        std::cerr << "Image too short: expected at least " << hash_end << " bytes, got " << image.size() << std::endl;
+        return -1;
+    }
+    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
@@ -436,9 +442,14 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
     repack_stm32_header(image, header);
 
-    // Ensure the buffer to hash is correctly constructed
-    // Signature is calculated from first byte of header version field to last byte of image given by image length field.
-    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.end());
+    // The ROM code hashes exactly 'header.length' bytes after the header (256 bytes), so we must not include trailing padding.
+    size_t hash_end = sizeof(STM32Header) + header.length;
+    if (hash_end > image.size()) {
+        std::cerr << "Image too short: expected at least " << hash_end << " bytes, got " << image.size() << std::endl;
+        EC_KEY_free(key);
+        return -1;
+    }
+    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
 
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
