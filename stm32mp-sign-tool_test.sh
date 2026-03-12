@@ -38,7 +38,8 @@ pkcs11-tool --pin $PIN --module $PKCS11_MODULE_PATH --keypairgen --key-type EC:p
 ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECp256" -p 12345 -i image.stm32 -o image.stm32.signed -h hash.bin
 ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECp256?pin-value=12345"  -i image.stm32 -o image.stm32.signed -h hash.bin
 
-# test pkcs11 key (brainpool)/ skipped because softhsm2 or OpenSC does not support brainpool curve brainpoolP256t1
+# Skip for the moment test pkcs11 sign with (brainpoolP256t1)
+# will be fixed in later releases: https://github.com/OpenSC/OpenSC/pull/3601
 # pkcs11-tool --pin $PIN --module $PKCS11_MODULE_PATH --keypairgen --key-type EC:brainpoolP256t1 --id 2 --label "testkeyECbrainpoolP256t1"
 # ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECbrainpoolP256t1" -p 12345 -i image.stm32 -o image.stm32.signed -h hash.bin
 # ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECbrainpoolP256t1?pin-value=12345"  -i image.stm32 -o image.stm32.signed -h hash.bin
