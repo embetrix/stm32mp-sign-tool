@@ -14,6 +14,10 @@ It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integri
 
 - Sign/Verify firmware images with ECDSA (NIST P-256 or brainpool 256).
 - Support for HSM Token (PKCS#11).
+- Support for separate public key usage (private key only needed for signing).
+- Two-step signing workflow for external signing (HSM, remote signing, etc.).
+- Automatic DER signature format parsing (compatible with OpenSSL output).
+- Generate public key hash from either private or public key.
 - Currently supports only STM32MP15x MPU firmware image headers.
 
 ## Requirements
@@ -69,6 +73,26 @@ Sign a firmware image using the following command:
 stm32mp-sign-tool -k <private_key_file> -i <image.stm32> -o <image.stm32.signed>
 ```
 
+Create sha256 to sign from image
+
+```sh
+stm32mp-sign-tool -u <public_key_file> -i <image.stm32> -s <image-sha256.bin>
+```
+
+Sign image eg. with openssl
+
+```sh
+openssl pkeyutl -sign -inkey <private_key_file> -passin pass:<> -in <image-sha256.bin> -out <signature.der>
+```
+
+Apply the signature to create the signed image
+
+```sh
+stm32mp-sign-tool -u <public_key_file> -i <image.stm32> -d <signature.der> -o <image.stm32.signed>
+```
+
+The tool automatically handles both DER-encoded signatures (from OpenSSL) and raw 64-byte signatures.
+
 ### Sign a Firmware Image using a HSM Token
 
 Generate an ECDSA key:
@@ -85,14 +109,37 @@ stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -i <image.stm32> -o 
 
 ### Generating the public key hashes
 
-```sh
-stm32mp-sign-tool -v -k <private_key_file> -h <hash output>
-```
-or
+From a private key:
 
 ```sh
-stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -h <hash output>
+stm32mp-sign-tool -v -k <private_key_file> -h <hash_output>
 ```
+
+From a public key:
+
+```sh
+stm32mp-sign-tool -u <public_key_file> -h <hash_output>
+```
+
+Or with PKCS#11:
+
+```sh
+stm32mp-sign-tool -k "pkcs11:object=<KeyLabel>" -p <pin> -h <hash_output>
+```
+
+## Command Line Options
+
+- `-k` - Private key file or PKCS#11 URI (required for signing)
+- `-u` - Public key file
+- `-p` - Passphrase or PIN for private key
+- `-v` - Verbose mode
+- `-i` - Input image file to sign
+- `-o` - Output signed image file
+- `-h` - Output file for public key hash
+- `-s` - Output file for hash to sign
+- `-d` - Input signature file
+
+**Note:** The `-d` option accepts both DER-encoded signatures (standard OpenSSL output) and raw 64-byte signatures.
 
 ## License
 
