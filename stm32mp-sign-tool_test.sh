@@ -17,11 +17,11 @@ openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -aes-256-cbc -out
 ./stm32mp-sign-tool -v -k private_key.pem -p "pa33w0rd" -i image.stm32 -o image.stm32.signed
 
 # test plain key file (brainpool)
-openssl ecparam -name brainpoolP256r1 -genkey -out brainpool_private_key.pem
+openssl ecparam -name brainpoolP256t1 -genkey -out brainpool_private_key.pem
 ./stm32mp-sign-tool -v -k brainpool_private_key.pem -i image.stm32 -o image.stm32.signed
 
 # test plain key file with password (brainpool)
-openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:brainpoolP256r1 -aes-256-cbc -out brainpool_private_key.pem -pass pass:pa33w0rd
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:brainpoolP256t1 -aes-256-cbc -out brainpool_private_key.pem -pass pass:pa33w0rd
 ./stm32mp-sign-tool -v -k brainpool_private_key.pem -p "pa33w0rd" -i image.stm32 -o image.stm32.signed
 
 # test pkcs11 key
@@ -38,7 +38,7 @@ pkcs11-tool --pin $PIN --module $PKCS11_MODULE_PATH --keypairgen --key-type EC:p
 ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECp256" -p 12345 -i image.stm32 -o image.stm32.signed -h hash.bin
 ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECp256?pin-value=12345"  -i image.stm32 -o image.stm32.signed -h hash.bin
 
-# test pkcs11 key (brainpool)
-pkcs11-tool --pin $PIN --module $PKCS11_MODULE_PATH --keypairgen --key-type EC:brainpoolP256r1 --id 2 --label "testkeyECbrainpoolP256r1"
-./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECbrainpoolP256r1" -p 12345 -i image.stm32 -o image.stm32.signed -h hash.bin
-./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECbrainpoolP256r1?pin-value=12345"  -i image.stm32 -o image.stm32.signed -h hash.bin
+# test pkcs11 key (brainpool)/ skipped because softhsm2 or OpenSC does not support brainpool curve brainpoolP256t1
+# pkcs11-tool --pin $PIN --module $PKCS11_MODULE_PATH --keypairgen --key-type EC:brainpoolP256t1 --id 2 --label "testkeyECbrainpoolP256t1"
+# ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECbrainpoolP256t1" -p 12345 -i image.stm32 -o image.stm32.signed -h hash.bin
+# ./stm32mp-sign-tool -v -k "pkcs11:object=testkeyECbrainpoolP256t1?pin-value=12345"  -i image.stm32 -o image.stm32.signed -h hash.bin
