@@ -1,8 +1,0 @@
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/stm32mp-sign-tool.dir
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/test.dir
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/edit_cache.dir
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/rebuild_cache.dir
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/list_install_components.dir
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/install.dir
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/install/local.dir
-/home/runner/work/stm32mp-sign-tool/stm32mp-sign-tool/build/CMakeFiles/install/strip.dir

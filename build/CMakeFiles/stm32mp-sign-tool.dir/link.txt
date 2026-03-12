@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/stm32mp-sign-tool.dir/link.d "CMakeFiles/stm32mp-sign-tool.dir/stm32mp-sign-tool.cpp.o" -o stm32mp-sign-tool  /usr/lib/x86_64-linux-gnu/libssl.so /usr/lib/x86_64-linux-gnu/libcrypto.so
