@@ -101,7 +101,7 @@ int get_ec_pubkey(const unsigned char* pubkey, size_t pubkey_len, uint32_t algo,
     if (algo == 1) {
         curve_nid = NID_X9_62_prime256v1;
     } else if (algo == 2) {
-        curve_nid = NID_brainpoolP256r1;
+        curve_nid = NID_brainpoolP256t1;
     } else {
         std::cerr << "Unsupported ECDSA algorithm" << std::endl;
         return -1;
@@ -210,7 +210,7 @@ int get_key_algorithm(EC_KEY* key) {
     if (nid == NID_X9_62_prime256v1) {
         return 1;
     }
-    else if (nid == NID_brainpoolP256r1) {
+    else if (nid == NID_brainpoolP256t1) {
         return 2;
     }
     std::cerr << "Unsupported ECDSA curve" << std::endl;
