@@ -40,6 +40,7 @@
 
 static bool verbose = false;
 static ENGINE* engine = nullptr;
+static const char* pkcs11_module = nullptr;
 
 /*******************************************************************
  * https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files *
@@ -232,6 +233,11 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
         engine = ENGINE_by_id("pkcs11");
         if (!engine) {
             std::cerr << "Failed to load PKCS#11 engine" << std::endl;
+            return -1;
+        }
+
+        if (pkcs11_module && !ENGINE_ctrl_cmd_string(engine, "MODULE_PATH", pkcs11_module, 0)) {
+            std::cerr << "Failed to load pkcs11 module from path" << std::endl;
             return -1;
         }
 
@@ -497,7 +503,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
 }
 
 void usage(const char* argv0) {
-    std::cout << "Usage: " << argv0 << " -k key_desc [-p passphrase/pin] [-v] [-i input_file] [-o output_file] [-h hash_file]" << std::endl;
+    std::cout << "Usage: " << argv0 << " -k key_desc [-p passphrase/pin] [-m module_path] [-v] [-i input_file] [-o output_file] [-h hash_file]" << std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -513,7 +519,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    while ((opt = getopt(argc, argv, "k:p:h:vi:o:")) != -1) {
+    while ((opt = getopt(argc, argv, "k:p:h:vi:o:m:")) != -1) {
         switch (opt) {
             case 'k':
                 key_desc = optarg;
@@ -532,6 +538,9 @@ int main(int argc, char* argv[]) {
                 break;
             case 'o':
                 output_file = optarg;
+                break;
+            case 'm':
+                pkcs11_module = optarg;
                 break;
             default:
                 usage(argv[0]);
