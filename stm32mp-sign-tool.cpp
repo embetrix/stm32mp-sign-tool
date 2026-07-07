@@ -215,7 +215,7 @@ int get_key_algorithm(EC_KEY* key) {
     else if (nid == NID_brainpoolP256t1) {
         return 2;
     }
-    std::cerr << "Unsupported ECDSA curve" << std::endl;
+    std::cerr << "Unsupported ECDSA curve: " << OBJ_nid2sn(nid) << std::endl;
     return -1;
 }
 
@@ -237,7 +237,7 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
         }
 
         if (pkcs11_module && !ENGINE_ctrl_cmd_string(engine, "MODULE_PATH", pkcs11_module, 0)) {
-            std::cerr << "Failed to load pkcs11 module from path" << std::endl;
+            std::cerr << "Failed to load pkcs11 module from path: " << pkcs11_module << std::endl;
             return -1;
         }
 
@@ -261,7 +261,7 @@ int load_key(const char* key_desc, const char* passphrase, EC_KEY** ec_key) {
         if (!pkey) {
             ENGINE_finish(engine);
             ENGINE_free(engine);
-            std::cerr << "Failed to load private key from PKCS#11" << std::endl;
+            std::cerr << "Failed to load private key from PKCS#11: " << key_desc << std::endl;
             return -1;
         }
 
@@ -302,7 +302,7 @@ int hash_pubkey(const char* key_desc, const char* passphrase, const std::string 
     }
     EC_KEY* key = nullptr;
     if (load_key(key_desc, passphrase, &key) != 0) {
-        std::cerr << "Failed to load key" << std::endl;
+        std::cerr << "Failed to load key: " << key_desc << std::endl;
         return -1;
     }
     if (!key) {
@@ -339,7 +339,8 @@ int verify_stm32_image(const std::vector<unsigned char>& image) {
     STM32Header header = unpack_stm32_header(image);
 
     if (std::strncmp(header.magic, STM32_MAGIC, sizeof(header.magic)) != 0) {
-        std::cerr << "Not an STM32 header (signature FAIL)" << std::endl;
+        std::cerr << "Not an STM32 header (signature FAIL): expected magic '" << STM32_MAGIC
+                  << "', got '" << std::string(header.magic, sizeof(header.magic)) << "'" << std::endl;
         return -1;
     }
 
@@ -413,14 +414,15 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     }
     EC_KEY* key = nullptr;
     if (load_key(key_desc, passphrase, &key) != 0) {
-        std::cerr << "Failed to load key" << std::endl;
+        std::cerr << "Failed to load key: " << key_desc << std::endl;
         return -1;
     }
 
     STM32Header header = unpack_stm32_header(image);
 
     if (std::strncmp(header.magic, STM32_MAGIC, sizeof(header.magic)) != 0) {
-        std::cerr << "Not an STM32 header (signature FAIL)" << std::endl;
+        std::cerr << "Not an STM32 header (signature FAIL): expected magic '" << STM32_MAGIC
+                  << "', got '" << std::string(header.magic, sizeof(header.magic)) << "'" << std::endl;
         EC_KEY_free(key);
         return -1;
     }
