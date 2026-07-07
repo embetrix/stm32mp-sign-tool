@@ -21,8 +21,12 @@
 import struct
 import argparse
 
-# Define the STM32 header format
+# Define the STM32 header v1 format (STM32MP15x lines)
+# https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files
 STM32_HEADER_FORMAT = '<4s64s10I64s83xB'
+
+# Header version field: byte 1 = minor, byte 2 = major
+STM32_HEADER_VERSION_V1 = 0x00010000
 
 def generate_stm32_header(magic, checksum, hdr_version, length, entry_addr, load_addr, rollback_version, option_flags, ecdsa_algo):
     # Pack the header fields into a binary format
@@ -51,7 +55,7 @@ def generate_stm32_image(output_file, payload):
 
     # Define other header fields
     magic = 'STM2'
-    hdr_version = 1
+    hdr_version = STM32_HEADER_VERSION_V1
     length = len(payload)
     entry_addr = 0x08000000
     load_addr = 0x08000000

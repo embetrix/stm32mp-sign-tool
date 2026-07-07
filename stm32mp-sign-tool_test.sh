@@ -12,6 +12,17 @@ python3 stm32mp-gen-image.py image.stm32 image.bin
 openssl ecparam -name prime256v1 -genkey -out private_key.pem
 ./stm32mp-sign-tool -v -k private_key.pem -i image.stm32 -o image.stm32.signed
 
+# images with an unsupported header version (v2, STM32MP13x/STM32MP2 series) must be rejected
+python3 -c "
+data = bytearray(open('image.stm32', 'rb').read())
+data[0x4A] = 2  # header version major byte
+open('image_v2.stm32', 'wb').write(data)
+"
+if ./stm32mp-sign-tool -v -k private_key.pem -i image_v2.stm32 -o image_v2.stm32.signed; then
+    echo "ERROR: v2 header image should have been rejected"
+    exit 1
+fi
+
 # test plain key file with password
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -aes-256-cbc -out private_key.pem -pass pass:pa33w0rd
 ./stm32mp-sign-tool -v -k private_key.pem -p "pa33w0rd" -i image.stm32 -o image.stm32.signed
