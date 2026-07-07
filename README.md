@@ -14,7 +14,8 @@ It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integri
 
 - Sign/Verify firmware images with ECDSA (NIST P-256 or brainpool 256).
 - Support for HSM Token (PKCS#11).
-- Currently supports only STM32MP15x MPU firmware image headers.
+- Detects the [STM32 header version](https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files) of the firmware image.
+- Currently supports only the header v1 used by the STM32MP15x lines; the header v2 used by the STM32MP13x lines and STM32MP2 series is detected but not supported yet.
 
 ## Requirements
 

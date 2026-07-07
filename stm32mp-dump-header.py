@@ -21,20 +21,40 @@
 import struct
 import argparse
 
-# Define the STM32 header format
-STM32_HEADER_FORMAT = '<4s64s10I64s83sB'  # Matches the provided C struct layout
-STM32_HEADER_SIZE = struct.calcsize(STM32_HEADER_FORMAT)  # Calculate header size
+# STM32 header formats, keyed by the major version byte of hdr_version
+# https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files
+# v1 (STM32MP15x lines) is the only one implemented so far.
+STM32_HEADER_V1_FORMAT = '<4s64s10I64s83sB'
+STM32_HEADER_V1_SIZE = struct.calcsize(STM32_HEADER_V1_FORMAT)
+
+STM32_HEADER_SIZE = STM32_HEADER_V1_SIZE  # Largest header we can parse
+
+def get_header_version(header):
+    """
+    Returns (major, minor) from the hdr_version field at offset 0x48.
+    """
+    hdr_version = struct.unpack_from('<I', header, 0x48)[0]
+    return (hdr_version >> 16) & 0xFF, (hdr_version >> 8) & 0xFF
 
 def unpack_stm32_header(header):
     """
-    Unpacks the STM32Header binary data into a dictionary.
+    Unpacks the STM32 header binary data into a dictionary.
     """
+    if header[0:4] != b'STM2':
+        print(f"Error: not an STM32 header, magic: {header[0:4]!r}")
+        return None
+
+    major, minor = get_header_version(header)
+    if major != 1:
+        print(f"Error: STM32 header v{major}.{minor} is not supported yet (only v1, STM32MP15x lines)")
+        return None
+
     try:
-        unpacked_header = struct.unpack(STM32_HEADER_FORMAT, header)
+        unpacked_header = struct.unpack(STM32_HEADER_V1_FORMAT, header)
     except struct.error as e:
         print(f"Error unpacking header: {e}")
         print(f"Header length: {len(header)}")
-        print(f"Expected length: {STM32_HEADER_SIZE}")
+        print(f"Expected length: {STM32_HEADER_V1_SIZE}")
         return None
 
     # Create a dictionary with unpacked fields
@@ -42,7 +62,7 @@ def unpack_stm32_header(header):
         'magic': unpacked_header[0].decode('ascii').strip('\x00'),
         'signature': unpacked_header[1],
         'checksum': unpacked_header[2],
-        'hdr_version': unpacked_header[3],
+        'hdr_version': f'v{major}.{minor}',
         'length': unpacked_header[4],
         'entry_addr': unpacked_header[5],
         'reserved1': unpacked_header[6],

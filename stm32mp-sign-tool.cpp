@@ -48,14 +48,36 @@ static OSSL_PROVIDER* default_provider = nullptr;
 /*******************************************************************
  * https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files *
  *                                                                 *
- * Notes:                                                          *
+ * The STM32 binary header exists in several versions, identified  *
+ * by the major byte of the hdr_version field:                     *
+ * - v1.x (256 bytes): STM32MP15x lines                            *
+ * - v2.x (512 bytes): STM32MP13x lines and STM32MP2 series,       *
+ *   with extension headers (not implemented yet)                  *
+ *                                                                 *
+ * Notes (v1):                                                     *
  * - The signature is calculated over the data starting at offset  *
  *   0x48 (hdr_version field) up to the last byte given by the     *
  *   image_length field (i.e. sizeof(header) + header.length).     *
  * - The ecdsa_pubkey contains the public key (x, y) coordinates   *
  *   of the ECDSA key (64 bytes total).                            *
  *******************************************************************/
-struct STM32Header {
+
+// Fields common to all STM32 header versions (offsets 0x00-0x63)
+struct STM32HeaderCommon {
+    char magic[4];
+    unsigned char signature[64];
+    uint32_t checksum;
+    uint32_t hdr_version; // byte 1: minor, byte 2: major
+    uint32_t length;
+    uint32_t entry_addr;
+    uint32_t reserved1; // Set to 0
+    uint32_t load_addr;
+    uint32_t reserved2; // Set to 0
+    uint32_t rollback_version;
+} __attribute__((packed));
+
+// Header v1 (STM32MP15x lines)
+struct STM32HeaderV1 {
     char magic[4];
     unsigned char signature[64];
     uint32_t checksum;
@@ -73,14 +95,36 @@ struct STM32Header {
     unsigned char binary_type;
 } __attribute__((packed));
 
-STM32Header unpack_stm32_header(const std::vector<unsigned char>& image) {
-    STM32Header header;
-    std::memcpy(&header, image.data(), sizeof(STM32Header));
+enum STM32HeaderVersion {
+    STM32_HEADER_V1 = 1, // STM32MP15x lines
+    STM32_HEADER_V2 = 2, // STM32MP13x lines and STM32MP2 series
+};
+
+// Validate the common header fields and return the header major version,
+// or -1 if the image is too short or does not carry the STM32 magic.
+int get_stm32_header_version(const std::vector<unsigned char>& image) {
+    if (image.size() < sizeof(STM32HeaderCommon)) {
+        std::cerr << "Image too short for an STM32 header: got " << image.size() << " bytes" << std::endl;
+        return -1;
+    }
+    STM32HeaderCommon common;
+    std::memcpy(&common, image.data(), sizeof(common));
+    if (std::strncmp(common.magic, STM32_MAGIC, sizeof(common.magic)) != 0) {
+        std::cerr << "Not an STM32 header (signature FAIL): expected magic '" << STM32_MAGIC
+                  << "', got '" << std::string(common.magic, sizeof(common.magic)) << "'" << std::endl;
+        return -1;
+    }
+    return (common.hdr_version >> 16) & 0xFF;
+}
+
+STM32HeaderV1 unpack_stm32_header_v1(const std::vector<unsigned char>& image) {
+    STM32HeaderV1 header;
+    std::memcpy(&header, image.data(), sizeof(STM32HeaderV1));
     return header;
 }
 
-void repack_stm32_header(std::vector<unsigned char>& image, const STM32Header& header) {
-    std::memcpy(image.data(), &header, sizeof(STM32Header));
+void repack_stm32_header_v1(std::vector<unsigned char>& image, const STM32HeaderV1& header) {
+    std::memcpy(image.data(), &header, sizeof(STM32HeaderV1));
 }
 
 void print_hex(const std::string& label, const std::vector<unsigned char>& data) {
@@ -354,26 +398,20 @@ int hash_pubkey(const char* key_desc, const char* passphrase, const std::string 
  
 }
 
-int verify_stm32_image(const std::vector<unsigned char>& image) {
-    if (image.empty()) {
-        std::cerr << "Image data is empty" << std::endl;
+int verify_stm32_image_v1(const std::vector<unsigned char>& image) {
+    if (image.size() < sizeof(STM32HeaderV1)) {
+        std::cerr << "Image too short for an STM32 v1 header: got " << image.size() << " bytes" << std::endl;
         return -1;
     }
-    STM32Header header = unpack_stm32_header(image);
-
-    if (std::strncmp(header.magic, STM32_MAGIC, sizeof(header.magic)) != 0) {
-        std::cerr << "Not an STM32 header (signature FAIL): expected magic '" << STM32_MAGIC
-                  << "', got '" << std::string(header.magic, sizeof(header.magic)) << "'" << std::endl;
-        return -1;
-    }
+    STM32HeaderV1 header = unpack_stm32_header_v1(image);
 
     // The ROM code hashes exactly 'header.length' bytes after the header (256 bytes), so we must not include trailing padding.
-    size_t hash_end = sizeof(STM32Header) + header.length;
+    size_t hash_end = sizeof(STM32HeaderV1) + header.length;
     if (hash_end > image.size()) {
         std::cerr << "Image too short: expected at least " << hash_end << " bytes, got " << image.size() << std::endl;
         return -1;
     }
-    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
+    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32HeaderV1, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(buffer_to_hash.data(), buffer_to_hash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
@@ -444,13 +482,25 @@ int verify_stm32_image(const std::vector<unsigned char>& image) {
     }
 }
 
-int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
-    if (image.empty()) {
-        std::cerr << "Image data is empty" << std::endl;
-        return -1;
+int verify_stm32_image(const std::vector<unsigned char>& image) {
+    int hdr_version = get_stm32_header_version(image);
+    switch (hdr_version) {
+        case STM32_HEADER_V1:
+            return verify_stm32_image_v1(image);
+        case STM32_HEADER_V2:
+            std::cerr << "STM32 header v2 (STM32MP13x lines and STM32MP2 series) is not supported yet" << std::endl;
+            return -1;
+        case -1:
+            return -1;
+        default:
+            std::cerr << "Unknown STM32 header version: " << hdr_version << std::endl;
+            return -1;
     }
-    if (!key_desc || std::strlen(key_desc) == 0) {
-        std::cerr << "Key file path is empty" << std::endl;
+}
+
+int sign_stm32_image_v1(std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
+    if (image.size() < sizeof(STM32HeaderV1)) {
+        std::cerr << "Image too short for an STM32 v1 header: got " << image.size() << " bytes" << std::endl;
         return -1;
     }
     EVP_PKEY* key = nullptr;
@@ -459,14 +509,7 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
         return -1;
     }
 
-    STM32Header header = unpack_stm32_header(image);
-
-    if (std::strncmp(header.magic, STM32_MAGIC, sizeof(header.magic)) != 0) {
-        std::cerr << "Not an STM32 header (signature FAIL): expected magic '" << STM32_MAGIC
-                  << "', got '" << std::string(header.magic, sizeof(header.magic)) << "'" << std::endl;
-        EVP_PKEY_free(key);
-        return -1;
-    }
+    STM32HeaderV1 header = unpack_stm32_header_v1(image);
 
     // Ensure reserved fields are set to 0
     header.reserved1 = 0;
@@ -490,16 +533,16 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     header.ecdsa_algo = static_cast<uint32_t>(algo);
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding)); // Ensure padding is zeroed
-    repack_stm32_header(image, header);
+    repack_stm32_header_v1(image, header);
 
     // The ROM code hashes exactly 'header.length' bytes after the header (256 bytes), so we must not include trailing padding.
-    size_t hash_end = sizeof(STM32Header) + header.length;
+    size_t hash_end = sizeof(STM32HeaderV1) + header.length;
     if (hash_end > image.size()) {
         std::cerr << "Image too short: expected at least " << hash_end << " bytes, got " << image.size() << std::endl;
         EVP_PKEY_free(key);
         return -1;
     }
-    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32Header, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
+    std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32HeaderV1, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
 
     // Sign with the high-level EVP interface so that provider-backed keys
     // (e.g. non-extractable PKCS#11 keys) sign in-place. This produces a
@@ -555,12 +598,39 @@ int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, co
     std::memcpy(signature.data() + sizeof(header.signature) - s_bytes.size(), s_bytes.data(), s_bytes.size());
     print_hex("Signature", signature);
 
-    std::memcpy(image.data() + offsetof(STM32Header, signature), signature.data(), signature.size());
+    std::memcpy(image.data() + offsetof(STM32HeaderV1, signature), signature.data(), signature.size());
     ECDSA_SIG_free(sig);
 
     // Verify the signature
-    return verify_stm32_image(image);
+    return verify_stm32_image_v1(image);
 
+}
+
+int sign_stm32_image(std::vector<unsigned char>& image, const char* key_desc, const char* passphrase) {
+    if (image.empty()) {
+        std::cerr << "Image data is empty" << std::endl;
+        return -1;
+    }
+    if (!key_desc || std::strlen(key_desc) == 0) {
+        std::cerr << "Key file path is empty" << std::endl;
+        return -1;
+    }
+    int hdr_version = get_stm32_header_version(image);
+    switch (hdr_version) {
+        case STM32_HEADER_V1:
+            if (verbose) {
+                std::cout << "STM32 header v1 (STM32MP15x lines)" << std::endl;
+            }
+            return sign_stm32_image_v1(image, key_desc, passphrase);
+        case STM32_HEADER_V2:
+            std::cerr << "STM32 header v2 (STM32MP13x lines and STM32MP2 series) is not supported yet" << std::endl;
+            return -1;
+        case -1:
+            return -1;
+        default:
+            std::cerr << "Unknown STM32 header version: " << hdr_version << std::endl;
+            return -1;
+    }
 }
 
 void usage(const char* argv0) {
