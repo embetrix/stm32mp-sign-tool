@@ -20,8 +20,8 @@ It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integri
 
 - C++ compiler
 - CMake
-- OpenSSL library
-- Optional: PKCS#11 libraries and tools for HSM signing
+- OpenSSL library (>= 3.0)
+- Optional: PKCS#11 provider and tools for HSM signing
 
 ## Installation
 
@@ -31,7 +31,7 @@ It uses ECDSA (Elliptic Curve Digital Signature Algorithm) to ensure the integri
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y openssl libssl-dev python3 softhsm2 opensc libengine-pkcs11-openssl
+sudo apt-get install -y openssl libssl-dev python3 softhsm2 opensc pkcs11-provider
 ```
 
 ## Build
