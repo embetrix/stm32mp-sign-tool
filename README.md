@@ -80,7 +80,7 @@ pkcs11-tool --pin <pin> --module <Module Path> --keypairgen --key-type EC:prime2
 Sign a firmware image using the URI of the key:
 
 ```sh
-stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" -p <pin> -i <image.stm32> -o <image.stm32.signed>
+stm32mp-sign-tool -v -k "pkcs11:object=<KeyLabel>" [-m <Module Path>] -p <pin> -i <image.stm32> -o <image.stm32.signed>
 ```
 
 ### Generating the public key hashes
