@@ -27,6 +27,7 @@
 #include <stdexcept>
 #include <cstdint>
 #include <iomanip>
+#include <memory>
 #include <openssl/obj_mac.h>
 #include <openssl/sha.h>
 #include <openssl/evp.h>
@@ -42,8 +43,75 @@
 
 static bool verbose = false;
 static const char* pkcs11_module = nullptr;
-static OSSL_PROVIDER* pkcs11_provider = nullptr;
-static OSSL_PROVIDER* default_provider = nullptr;
+
+struct EvpPkeyDeleter {
+    void operator()(EVP_PKEY* ptr) const { EVP_PKEY_free(ptr); }
+};
+
+struct EvpPkeyCtxDeleter {
+    void operator()(EVP_PKEY_CTX* ptr) const { EVP_PKEY_CTX_free(ptr); }
+};
+
+struct EvpMdCtxDeleter {
+    void operator()(EVP_MD_CTX* ptr) const { EVP_MD_CTX_free(ptr); }
+};
+
+struct EcdsaSigDeleter {
+    void operator()(ECDSA_SIG* ptr) const { ECDSA_SIG_free(ptr); }
+};
+
+struct BignumDeleter {
+    void operator()(BIGNUM* ptr) const { BN_free(ptr); }
+};
+
+struct OssParamBldDeleter {
+    void operator()(OSSL_PARAM_BLD* ptr) const { OSSL_PARAM_BLD_free(ptr); }
+};
+
+struct OssParamDeleter {
+    void operator()(OSSL_PARAM* ptr) const { OSSL_PARAM_free(ptr); }
+};
+
+struct OssStoreCtxDeleter {
+    void operator()(OSSL_STORE_CTX* ptr) const { OSSL_STORE_close(ptr); }
+};
+
+struct OssStoreInfoDeleter {
+    void operator()(OSSL_STORE_INFO* ptr) const { OSSL_STORE_INFO_free(ptr); }
+};
+
+struct OssProviderDeleter {
+    void operator()(OSSL_PROVIDER* ptr) const { OSSL_PROVIDER_unload(ptr); }
+};
+
+struct UiMethodDeleter {
+    void operator()(UI_METHOD* ptr) const { UI_destroy_method(ptr); }
+};
+
+struct OpenSslBufferDeleter {
+    void operator()(unsigned char* ptr) const { OPENSSL_free(ptr); }
+};
+
+struct FileDeleter {
+    void operator()(FILE* ptr) const { fclose(ptr); }
+};
+
+using EvpPkeyPtr = std::unique_ptr<EVP_PKEY, EvpPkeyDeleter>;
+using EvpPkeyCtxPtr = std::unique_ptr<EVP_PKEY_CTX, EvpPkeyCtxDeleter>;
+using EvpMdCtxPtr = std::unique_ptr<EVP_MD_CTX, EvpMdCtxDeleter>;
+using EcdsaSigPtr = std::unique_ptr<ECDSA_SIG, EcdsaSigDeleter>;
+using BignumPtr = std::unique_ptr<BIGNUM, BignumDeleter>;
+using OssParamBldPtr = std::unique_ptr<OSSL_PARAM_BLD, OssParamBldDeleter>;
+using OssParamPtr = std::unique_ptr<OSSL_PARAM, OssParamDeleter>;
+using OssStoreCtxPtr = std::unique_ptr<OSSL_STORE_CTX, OssStoreCtxDeleter>;
+using OssStoreInfoPtr = std::unique_ptr<OSSL_STORE_INFO, OssStoreInfoDeleter>;
+using OssProviderPtr = std::unique_ptr<OSSL_PROVIDER, OssProviderDeleter>;
+using UiMethodPtr = std::unique_ptr<UI_METHOD, UiMethodDeleter>;
+using OpenSslBufferPtr = std::unique_ptr<unsigned char, OpenSslBufferDeleter>;
+using FilePtr = std::unique_ptr<FILE, FileDeleter>;
+
+static OssProviderPtr pkcs11_provider;
+static OssProviderPtr default_provider;
 
 /*******************************************************************
  * https://wiki.st.com/stm32mpu/wiki/STM32_header_for_binary_files *
@@ -162,38 +230,36 @@ int get_ec_pubkey(const unsigned char* pubkey, size_t pubkey_len, uint32_t algo,
     point[0] = 0x04;
     std::memcpy(point.data() + 1, pubkey, pubkey_len);
 
-    OSSL_PARAM_BLD* bld = OSSL_PARAM_BLD_new();
+    OssParamBldPtr bld(OSSL_PARAM_BLD_new());
     if (!bld) {
         std::cerr << "Failed to create OSSL_PARAM_BLD" << std::endl;
         return -1;
     }
-    if (!OSSL_PARAM_BLD_push_utf8_string(bld, OSSL_PKEY_PARAM_GROUP_NAME,
+    if (!OSSL_PARAM_BLD_push_utf8_string(bld.get(), OSSL_PKEY_PARAM_GROUP_NAME,
                                          group_name, 0) ||
-        !OSSL_PARAM_BLD_push_octet_string(bld, OSSL_PKEY_PARAM_PUB_KEY,
+        !OSSL_PARAM_BLD_push_octet_string(bld.get(), OSSL_PKEY_PARAM_PUB_KEY,
                                           point.data(), point.size())) {
         std::cerr << "Failed to set public key parameters" << std::endl;
-        OSSL_PARAM_BLD_free(bld);
         return -1;
     }
-    OSSL_PARAM* params = OSSL_PARAM_BLD_to_param(bld);
-    OSSL_PARAM_BLD_free(bld);
+    OssParamPtr params(OSSL_PARAM_BLD_to_param(bld.get()));
     if (!params) {
         std::cerr << "Failed to build public key parameters" << std::endl;
         return -1;
     }
 
-    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr);
+    EvpPkeyCtxPtr ctx(EVP_PKEY_CTX_new_from_name(nullptr, "EC", nullptr));
+    EVP_PKEY* raw_pkey = nullptr;
     int ret = -1;
     if (ctx &&
-        EVP_PKEY_fromdata_init(ctx) > 0 &&
-        EVP_PKEY_fromdata(ctx, pkey, EVP_PKEY_PUBLIC_KEY, params) > 0) {
+        EVP_PKEY_fromdata_init(ctx.get()) > 0 &&
+        EVP_PKEY_fromdata(ctx.get(), &raw_pkey, EVP_PKEY_PUBLIC_KEY, params.get()) > 0) {
+        *pkey = raw_pkey;
         ret = 0;
     } else {
         std::cerr << "Failed to create EVP_PKEY from public key" << std::endl;
-        *pkey = nullptr;
+        EvpPkeyPtr failed_pkey(raw_pkey);
     }
-    EVP_PKEY_CTX_free(ctx);
-    OSSL_PARAM_free(params);
     return ret;
 }
 
@@ -205,14 +271,15 @@ std::vector<unsigned char> get_raw_pubkey(EVP_PKEY* key) {
     // Export the public key params. Unlike the per-parameter getters,
     // EVP_PKEY_todata works uniformly across the default provider (file
     // keys) and the PKCS#11 provider, which only implements key export.
-    OSSL_PARAM* params = nullptr;
-    if (EVP_PKEY_todata(key, EVP_PKEY_PUBLIC_KEY, &params) != 1 || !params) {
+    OSSL_PARAM* raw_params = nullptr;
+    if (EVP_PKEY_todata(key, EVP_PKEY_PUBLIC_KEY, &raw_params) != 1 || !raw_params) {
         std::cerr << "Failed to export public key from EVP_PKEY" << std::endl;
         return {};
     }
+    OssParamPtr params(raw_params);
 
     std::vector<unsigned char> pubkey;
-    const OSSL_PARAM* pub = OSSL_PARAM_locate_const(params, OSSL_PKEY_PARAM_PUB_KEY);
+    const OSSL_PARAM* pub = OSSL_PARAM_locate_const(params.get(), OSSL_PKEY_PARAM_PUB_KEY);
     if (pub && pub->data_size == 65) {
         // Uncompressed EC point: 0x04 || X || Y
         const unsigned char* point = static_cast<const unsigned char*>(pub->data);
@@ -221,7 +288,6 @@ std::vector<unsigned char> get_raw_pubkey(EVP_PKEY* key) {
         }
     }
 
-    OSSL_PARAM_free(params);
     if (pubkey.empty()) {
         std::cerr << "Unexpected public key encoding" << std::endl;
     }
@@ -285,76 +351,71 @@ int load_key(const char* key_desc, const char* passphrase, EVP_PKEY** pkey) {
 
         // The default provider is required alongside pkcs11 (e.g. for hashing).
         if (!default_provider) {
-            default_provider = OSSL_PROVIDER_load(nullptr, "default");
+            default_provider.reset(OSSL_PROVIDER_load(nullptr, "default"));
         }
         if (!pkcs11_provider) {
-            pkcs11_provider = OSSL_PROVIDER_load(nullptr, "pkcs11");
+            pkcs11_provider.reset(OSSL_PROVIDER_load(nullptr, "pkcs11"));
         }
         if (!pkcs11_provider) {
             std::cerr << "Failed to load PKCS#11 provider" << std::endl;
             return -1;
         }
 
-        UI_METHOD* ui_method = nullptr;
+        UiMethodPtr ui_method;
         if (passphrase) {
-            ui_method = UI_create_method("stm32mp-sign-tool pin reader");
-            if (!ui_method || UI_method_set_reader(ui_method, ui_read_string) != 0) {
+            ui_method.reset(UI_create_method("stm32mp-sign-tool pin reader"));
+            if (!ui_method || UI_method_set_reader(ui_method.get(), ui_read_string) != 0) {
                 std::cerr << "Failed to set up PIN reader" << std::endl;
-                if (ui_method) UI_destroy_method(ui_method);
                 return -1;
             }
         }
 
-        OSSL_STORE_CTX* store = OSSL_STORE_open(key_desc, ui_method,
-                                                const_cast<char*>(passphrase),
-                                                nullptr, nullptr);
+        OssStoreCtxPtr store(OSSL_STORE_open(key_desc, ui_method.get(),
+                                             const_cast<char*>(passphrase),
+                                             nullptr, nullptr));
         if (!store) {
             std::cerr << "Failed to open PKCS#11 store: " << key_desc << std::endl;
-            if (ui_method) UI_destroy_method(ui_method);
             return -1;
         }
 
         // Look for the private key in the store.
-        OSSL_STORE_expect(store, OSSL_STORE_INFO_PKEY);
-        while (!OSSL_STORE_eof(store)) {
-            OSSL_STORE_INFO* info = OSSL_STORE_load(store);
+        EvpPkeyPtr loaded_pkey;
+        OSSL_STORE_expect(store.get(), OSSL_STORE_INFO_PKEY);
+        while (!OSSL_STORE_eof(store.get())) {
+            OssStoreInfoPtr info(OSSL_STORE_load(store.get()));
             if (!info) {
-                if (OSSL_STORE_error(store)) {
+                if (OSSL_STORE_error(store.get())) {
                     continue;
                 }
                 break;
             }
-            if (OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_PKEY) {
-                *pkey = OSSL_STORE_INFO_get1_PKEY(info);
-                OSSL_STORE_INFO_free(info);
+            if (OSSL_STORE_INFO_get_type(info.get()) == OSSL_STORE_INFO_PKEY) {
+                loaded_pkey.reset(OSSL_STORE_INFO_get1_PKEY(info.get()));
                 break;
             }
-            OSSL_STORE_INFO_free(info);
         }
 
-        OSSL_STORE_close(store);
-        if (ui_method) UI_destroy_method(ui_method);
-
-        if (!*pkey) {
+        if (!loaded_pkey) {
             std::cerr << "Failed to load private key from PKCS#11: " << key_desc << std::endl;
             return -1;
         }
+        *pkey = loaded_pkey.release();
     }
     else {
         // Load key from file
-        FILE* key_fp = fopen(key_desc, "r");
+        FilePtr key_fp(fopen(key_desc, "r"));
         if (!key_fp) {
             std::cerr << "Failed to open key file" << std::endl;
             return -1;
         }
 
-        *pkey = PEM_read_PrivateKey(key_fp, nullptr, nullptr,
-                                    static_cast<void*>(const_cast<char*>(passphrase)));
-        fclose(key_fp);
-        if (!*pkey) {
+        EvpPkeyPtr loaded_pkey(PEM_read_PrivateKey(key_fp.get(), nullptr, nullptr,
+                                                   static_cast<void*>(const_cast<char*>(passphrase))));
+        if (!loaded_pkey) {
             std::cerr << "Failed to read key from file" << std::endl;
             return -1;
         }
+        *pkey = loaded_pkey.release();
     }
 
     return 0;
@@ -365,22 +426,21 @@ int hash_pubkey(const char* key_desc, const char* passphrase, const std::string 
         std::cerr << "Invalid arguments" << std::endl;
         return -1;
     }
-    EVP_PKEY* key = nullptr;
-    if (load_key(key_desc, passphrase, &key) != 0) {
+    EVP_PKEY* raw_key = nullptr;
+    if (load_key(key_desc, passphrase, &raw_key) != 0) {
         std::cerr << "Failed to load key: " << key_desc << std::endl;
         return -1;
     }
-    if (!key) {
+    if (!raw_key) {
         std::cerr << "Invalid key" << std::endl;
         return -1;
     }
-    std::vector<unsigned char> pubkey = get_raw_pubkey(key);
+    EvpPkeyPtr key(raw_key);
+    std::vector<unsigned char> pubkey = get_raw_pubkey(key.get());
     if (pubkey.empty()) {
         std::cerr << "Failed to get raw public key" << std::endl;
-        EVP_PKEY_free(key);
         return -1;
     }
-    EVP_PKEY_free(key);
 
     std::vector<unsigned char> phash(SHA256_DIGEST_LENGTH);
     SHA256(pubkey.data(), pubkey.size(), phash.data());
@@ -421,7 +481,7 @@ int verify_stm32_image_v1(const std::vector<unsigned char>& image) {
     print_hex("Hash", hash);
     print_hex("Signature", signature);
 
-    ECDSA_SIG* sig = ECDSA_SIG_new();
+    EcdsaSigPtr sig(ECDSA_SIG_new());
 
     if (!sig) {
         std::cerr << "Failed to create ECDSA_SIG structure" << std::endl;
@@ -429,50 +489,43 @@ int verify_stm32_image_v1(const std::vector<unsigned char>& image) {
     }
 
     // Extract r and s from the signature buffer
-    BIGNUM* r = BN_bin2bn(signature.data(), sizeof(header.signature) / 2, nullptr);
-    BIGNUM* s = BN_bin2bn(signature.data() + sizeof(header.signature) / 2, sizeof(header.signature) / 2, nullptr);
+    BignumPtr r(BN_bin2bn(signature.data(), sizeof(header.signature) / 2, nullptr));
+    BignumPtr s(BN_bin2bn(signature.data() + sizeof(header.signature) / 2, sizeof(header.signature) / 2, nullptr));
     if (!r || !s) {
-        if (r) BN_free(r);
-        if (s) BN_free(s);
         std::cerr << "Failed to create BIGNUMs for r and s" << std::endl;
-        ECDSA_SIG_free(sig);
         return -1;
     }
 
-    if (ECDSA_SIG_set0(sig, r, s) == 0) {
+    if (ECDSA_SIG_set0(sig.get(), r.get(), s.get()) == 0) {
         std::cerr << "Failed to set r and s in ECDSA_SIG" << std::endl;
-        BN_free(r);
-        BN_free(s);
-        ECDSA_SIG_free(sig);
         return -1;
     }
+    r.release();
+    s.release();
 
     // EVP_DigestVerify expects a DER-encoded ECDSA signature.
-    unsigned char* der = nullptr;
-    int der_len = i2d_ECDSA_SIG(sig, &der);
-    ECDSA_SIG_free(sig);
+    unsigned char* raw_der = nullptr;
+    int der_len = i2d_ECDSA_SIG(sig.get(), &raw_der);
+    OpenSslBufferPtr der(raw_der);
     if (der_len <= 0) {
         std::cerr << "Failed to DER-encode signature" << std::endl;
         return -1;
     }
 
-    EVP_PKEY* pubkey = nullptr;
-    if (get_ec_pubkey(header.ecdsa_pubkey, sizeof(header.ecdsa_pubkey), header.ecdsa_algo, &pubkey) != 0) {
+    EVP_PKEY* raw_pubkey = nullptr;
+    if (get_ec_pubkey(header.ecdsa_pubkey, sizeof(header.ecdsa_pubkey), header.ecdsa_algo, &raw_pubkey) != 0) {
         std::cerr << "Failed to get EVP_PKEY from public key" << std::endl;
-        OPENSSL_free(der);
         return -1;
     }
+    EvpPkeyPtr pubkey(raw_pubkey);
 
-    EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+    EvpMdCtxPtr md_ctx(EVP_MD_CTX_new());
     int verify_status = -1;
     if (md_ctx &&
-        EVP_DigestVerifyInit(md_ctx, nullptr, EVP_sha256(), nullptr, pubkey) == 1) {
-        verify_status = EVP_DigestVerify(md_ctx, der, static_cast<size_t>(der_len),
+        EVP_DigestVerifyInit(md_ctx.get(), nullptr, EVP_sha256(), nullptr, pubkey.get()) == 1) {
+        verify_status = EVP_DigestVerify(md_ctx.get(), der.get(), static_cast<size_t>(der_len),
                                          buffer_to_hash.data(), buffer_to_hash.size());
     }
-    EVP_MD_CTX_free(md_ctx);
-    OPENSSL_free(der);
-    EVP_PKEY_free(pubkey);
 
     if (verify_status == 1) {
         return 0;
@@ -503,11 +556,12 @@ int sign_stm32_image_v1(std::vector<unsigned char>& image, const char* key_desc,
         std::cerr << "Image too short for an STM32 v1 header: got " << image.size() << " bytes" << std::endl;
         return -1;
     }
-    EVP_PKEY* key = nullptr;
-    if (load_key(key_desc, passphrase, &key) != 0) {
+    EVP_PKEY* raw_key = nullptr;
+    if (load_key(key_desc, passphrase, &raw_key) != 0) {
         std::cerr << "Failed to load key: " << key_desc << std::endl;
         return -1;
     }
+    EvpPkeyPtr key(raw_key);
 
     STM32HeaderV1 header = unpack_stm32_header_v1(image);
 
@@ -517,17 +571,15 @@ int sign_stm32_image_v1(std::vector<unsigned char>& image, const char* key_desc,
 
 
     // Get the public key from the private key
-    std::vector<unsigned char> pubkey = get_raw_pubkey(key);
+    std::vector<unsigned char> pubkey = get_raw_pubkey(key.get());
     if (pubkey.empty()) {
-        EVP_PKEY_free(key);
         return -1;
     }
     print_hex("Public Key", pubkey);
 
     std::memcpy(header.ecdsa_pubkey, pubkey.data(), pubkey.size());
-    int algo = get_key_algorithm(key);
+    int algo = get_key_algorithm(key.get());
     if (algo < 0) {
-        EVP_PKEY_free(key);
         return -1;
     }
     header.ecdsa_algo = static_cast<uint32_t>(algo);
@@ -539,7 +591,6 @@ int sign_stm32_image_v1(std::vector<unsigned char>& image, const char* key_desc,
     size_t hash_end = sizeof(STM32HeaderV1) + header.length;
     if (hash_end > image.size()) {
         std::cerr << "Image too short: expected at least " << hash_end << " bytes, got " << image.size() << std::endl;
-        EVP_PKEY_free(key);
         return -1;
     }
     std::vector<unsigned char> buffer_to_hash(image.begin() + offsetof(STM32HeaderV1, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hash_end));
@@ -547,32 +598,26 @@ int sign_stm32_image_v1(std::vector<unsigned char>& image, const char* key_desc,
     // Sign with the high-level EVP interface so that provider-backed keys
     // (e.g. non-extractable PKCS#11 keys) sign in-place. This produces a
     // DER-encoded ECDSA signature.
-    EVP_MD_CTX* md_ctx = EVP_MD_CTX_new();
+    EvpMdCtxPtr md_ctx(EVP_MD_CTX_new());
     std::vector<unsigned char> der;
     size_t der_len = 0;
     if (!md_ctx ||
-        EVP_DigestSignInit(md_ctx, nullptr, EVP_sha256(), nullptr, key) != 1 ||
-        EVP_DigestSign(md_ctx, nullptr, &der_len, buffer_to_hash.data(), buffer_to_hash.size()) != 1) {
+        EVP_DigestSignInit(md_ctx.get(), nullptr, EVP_sha256(), nullptr, key.get()) != 1 ||
+        EVP_DigestSign(md_ctx.get(), nullptr, &der_len, buffer_to_hash.data(), buffer_to_hash.size()) != 1) {
         std::cerr << "Failed to initialize signing" << std::endl;
-        EVP_MD_CTX_free(md_ctx);
-        EVP_PKEY_free(key);
         return -1;
     }
     der.resize(der_len);
-    if (EVP_DigestSign(md_ctx, der.data(), &der_len, buffer_to_hash.data(), buffer_to_hash.size()) != 1) {
+    if (EVP_DigestSign(md_ctx.get(), der.data(), &der_len, buffer_to_hash.data(), buffer_to_hash.size()) != 1) {
         std::cerr << "Failed to sign the image" << std::endl;
-        EVP_MD_CTX_free(md_ctx);
-        EVP_PKEY_free(key);
         return -1;
     }
     der.resize(der_len);
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(key);
 
     // Decode the DER signature back to (r, s) to build the fixed-size raw
     // signature expected in the STM32 header.
     const unsigned char* der_ptr = der.data();
-    ECDSA_SIG* sig = d2i_ECDSA_SIG(nullptr, &der_ptr, static_cast<long>(der_len));
+    EcdsaSigPtr sig(d2i_ECDSA_SIG(nullptr, &der_ptr, static_cast<long>(der_len)));
     if (sig == nullptr) {
         std::cerr << "Failed to decode ECDSA signature" << std::endl;
         return -1;
@@ -580,13 +625,12 @@ int sign_stm32_image_v1(std::vector<unsigned char>& image, const char* key_desc,
 
     const BIGNUM* r;
     const BIGNUM* s;
-    ECDSA_SIG_get0(sig, &r, &s);
+    ECDSA_SIG_get0(sig.get(), &r, &s);
 
     std::vector<unsigned char> r_bytes(static_cast<size_t>(BN_num_bytes(r)));
     std::vector<unsigned char> s_bytes(static_cast<size_t>(BN_num_bytes(s)));
     if (BN_bn2binpad(r, r_bytes.data(), static_cast<int>(r_bytes.size())) < 0 || BN_bn2binpad(s, s_bytes.data(), static_cast<int>(s_bytes.size())) < 0) {
         std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
-        ECDSA_SIG_free(sig);
         return -1;
     }
     print_hex("ECC key(r)", r_bytes);
@@ -599,7 +643,6 @@ int sign_stm32_image_v1(std::vector<unsigned char>& image, const char* key_desc,
     print_hex("Signature", signature);
 
     std::memcpy(image.data() + offsetof(STM32HeaderV1, signature), signature.data(), signature.size());
-    ECDSA_SIG_free(sig);
 
     // Verify the signature
     return verify_stm32_image_v1(image);
@@ -707,10 +750,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (pkcs11_provider) {
-        OSSL_PROVIDER_unload(pkcs11_provider);
+        pkcs11_provider.reset();
     }
     if (default_provider) {
-        OSSL_PROVIDER_unload(default_provider);
+        default_provider.reset();
     }
 
     // Securely erase the passphrase
