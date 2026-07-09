@@ -7,7 +7,13 @@ project(stm32mp-sign-tool)
 find_package(OpenSSL REQUIRED)
 
 # Add the executable
-add_executable(stm32mp-sign-tool stm32mp-sign-tool.cpp)
+add_executable(
+    stm32mp-sign-tool
+    stm32mp-sign-tool.cpp
+    crypto_support.cpp
+    stm32_image_format.cpp
+    stm32_image_format_mp15.cpp
+)
 
 # Link the libraries
 target_link_libraries(stm32mp-sign-tool ${OPENSSL_LIBRARIES})
@@ -18,4 +24,4 @@ install(TARGETS stm32mp-sign-tool DESTINATION bin)
 
 # Enable testing
 enable_testing()
-add_test(NAME stm32mp-sign-tool COMMAND ./stm32mp-sign-tool_test.sh)
+add_test(NAME stm32mp-sign-tool COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/stm32mp-sign-tool_test.sh)
