@@ -108,7 +108,7 @@ int STM32ImageFormatMP15::verify(const std::vector<unsigned char>& image) {
     }
 }
 
-int STM32ImageFormatMP15::sign(std::vector<unsigned char>& image, const std::string& keyDesc, const std::string& passphrase) {
+int STM32ImageFormatMP15::sign(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase) {
     if (image.size() < sizeof(STM32HeaderV1)) {
         std::cerr << "Image too short for an STM32 v1 header: got " << image.size() << " bytes" << std::endl;
         return -1;

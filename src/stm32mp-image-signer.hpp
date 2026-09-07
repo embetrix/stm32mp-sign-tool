@@ -4,6 +4,7 @@
 #include "stm32-image-format-factory.hpp"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,7 +16,7 @@ public:
     STM32MPImageSigner(std::shared_ptr<OpenSSLSupport> openSslSupport, std::shared_ptr<Utils> utils);
 
     int verifyImage(const std::vector<unsigned char>& image);
-    int signImage(std::vector<unsigned char>& image, const std::string& keyDesc, const std::string& passphrase);
+    int signImage(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase);
 
 private:
     STM32ImageFormat* getImageFormat(int headerVersion, int headerMinorVersion);

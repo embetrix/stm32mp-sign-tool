@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -16,7 +17,7 @@ public:
     STM32ImageFormatMP15(std::shared_ptr<OpenSSLSupport> openSslSupport, std::shared_ptr<Utils> utils);
 
     int verify(const std::vector<unsigned char>& image) override;
-    int sign(std::vector<unsigned char>& image, const std::string& keyDesc, const std::string& passphrase) override;
+    int sign(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase) override;
 
 private:
     struct STM32HeaderV1 {

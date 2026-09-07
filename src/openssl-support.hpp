@@ -2,6 +2,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,8 +49,8 @@ public:
     int getEcPubkey(const unsigned char* pubkey, size_t pubkeyLen, uint32_t algo, EVP_PKEY** pkey);
     std::vector<unsigned char> getRawPubkey(EVP_PKEY* key);
     int getKeyAlgorithm(EVP_PKEY* key);
-    int loadKey(const std::string& keyDesc, const std::string& passphrase, EVP_PKEY** pkey);
-    int hashPubkey(const std::string& keyDesc, const std::string& passphrase, const std::string& outputFile, const Utils& utils);
+    int loadKey(const std::string& keyDesc, const std::optional<std::string>& passphrase, EVP_PKEY** pkey);
+    int hashPubkey(const std::string& keyDesc, const std::optional<std::string>& passphrase, const std::string& outputFile, const Utils& utils);
 
 private:
     struct OssProviderDeleter {

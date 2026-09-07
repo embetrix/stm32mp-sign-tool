@@ -176,7 +176,7 @@ int OpenSSLSupport::getKeyAlgorithm(EVP_PKEY* key) {
     return -1;
 }
 
-int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::string& passphrase, EVP_PKEY** pkey) {
+int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::optional<std::string>& passphrase, EVP_PKEY** pkey) {
     *pkey = nullptr;
     if (keyDesc.empty()) {
         std::cerr << "Invalid arguments" << std::endl;
@@ -200,7 +200,7 @@ int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::string& passp
         }
 
         UiMethodPtr uiMethod;
-        if (!passphrase.empty()) {
+        if (passphrase.has_value()) {
             uiMethod.reset(UI_create_method("stm32mp-sign-tool pin reader"));
             if (!uiMethod || UI_method_set_reader(uiMethod.get(), uiReadString) != 0) {
                 std::cerr << "Failed to set up PIN reader" << std::endl;
@@ -209,7 +209,7 @@ int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::string& passp
         }
 
         OssStoreCtxPtr store(OSSL_STORE_open(keyDesc.c_str(), uiMethod.get(),
-                                             passphrase.empty() ? nullptr : const_cast<char*>(passphrase.c_str()),
+                                             passphrase.has_value() ? const_cast<char*>(passphrase->c_str()) : nullptr,
                                              nullptr, nullptr));
         if (!store) {
             std::cerr << "Failed to open PKCS#11 store: " << keyDesc << std::endl;
@@ -246,7 +246,7 @@ int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::string& passp
         }
 
         EvpPkeyPtr loadedPkey(PEM_read_PrivateKey(keyFp.get(), nullptr, nullptr,
-                                                   passphrase.empty() ? nullptr : static_cast<void*>(const_cast<char*>(passphrase.c_str()))));
+                                                   passphrase.has_value() ? static_cast<void*>(const_cast<char*>(passphrase->c_str())) : nullptr));
         if (!loadedPkey) {
             std::cerr << "Failed to read key from file" << std::endl;
             return -1;
@@ -257,7 +257,7 @@ int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::string& passp
     return 0;
 }
 
-int OpenSSLSupport::hashPubkey(const std::string& keyDesc, const std::string& passphrase, const std::string& outputFile, const Utils& utils) {
+int OpenSSLSupport::hashPubkey(const std::string& keyDesc, const std::optional<std::string>& passphrase, const std::string& outputFile, const Utils& utils) {
     if (keyDesc.empty() || outputFile.empty()) {
         std::cerr << "Invalid arguments" << std::endl;
         return -1;

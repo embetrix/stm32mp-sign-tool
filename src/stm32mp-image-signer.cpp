@@ -70,7 +70,7 @@ int STM32MPImageSigner::verifyImage(const std::vector<unsigned char>& image) {
     }
 }
 
-int STM32MPImageSigner::signImage(std::vector<unsigned char>& image, const std::string& keyDesc, const std::string& passphrase) {
+int STM32MPImageSigner::signImage(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase) {
     if (image.empty()) {
         std::cerr << "Image data is empty" << std::endl;
         return -1;
