@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "stm32-image-format-mp15.hpp"
+#include "stm32-image-format-v1.hpp"
 
-#include "openssl-support.hpp"
-#include "utils.hpp"
+#include "openssl-keys.hpp"
+#include "logger.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -13,28 +13,28 @@
 #include <stdexcept>
 #include <utility>
 
-STM32ImageFormatMP15::STM32ImageFormatMP15(std::shared_ptr<OpenSSLSupport> openSslSupport, std::shared_ptr<Utils> utils)
-    : openSslSupport(std::move(openSslSupport)),
-      utils(std::move(utils)) {
-    if (!this->openSslSupport) {
-        throw std::invalid_argument("OpenSSLSupport must not be null");
+STM32ImageFormatV1::STM32ImageFormatV1(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger)
+    : openSslKeys(std::move(openSslKeys)),
+      logger(std::move(logger)) {
+    if (!this->openSslKeys) {
+        throw std::invalid_argument("OpenSslKeys must not be null");
     }
-    if (!this->utils) {
-        throw std::invalid_argument("Utils must not be null");
+    if (!this->logger) {
+        throw std::invalid_argument("Logger must not be null");
     }
 }
 
-STM32ImageFormatMP15::STM32HeaderV1 STM32ImageFormatMP15::unpackHeader(const std::vector<unsigned char>& image) {
+STM32ImageFormatV1::STM32HeaderV1 STM32ImageFormatV1::unpackHeader(const std::vector<unsigned char>& image) {
     STM32HeaderV1 header;
     std::memcpy(&header, image.data(), sizeof(STM32HeaderV1));
     return header;
 }
 
-void STM32ImageFormatMP15::repackHeader(std::vector<unsigned char>& image, const STM32HeaderV1& header) {
+void STM32ImageFormatV1::repackHeader(std::vector<unsigned char>& image, const STM32HeaderV1& header) {
     std::memcpy(image.data(), &header, sizeof(STM32HeaderV1));
 }
 
-int STM32ImageFormatMP15::verify(const std::vector<unsigned char>& image) {
+int STM32ImageFormatV1::verify(const std::vector<unsigned char>& image) {
     if (image.size() < sizeof(STM32HeaderV1)) {
         std::cerr << "Image too short for an STM32 v1 header: got " << image.size() << " bytes" << std::endl;
         return -1;
@@ -53,8 +53,8 @@ int STM32ImageFormatMP15::verify(const std::vector<unsigned char>& image) {
         return -1;
     }
     std::vector<unsigned char> signature(header.signature, header.signature + sizeof(header.signature));
-    utils->printHex("Hash", hash);
-    utils->printHex("Signature", signature);
+    logger->printHex("Hash", hash);
+    logger->printHex("Signature", signature);
 
     EcdsaSigPtr sig(ECDSA_SIG_new());
 
@@ -86,7 +86,7 @@ int STM32ImageFormatMP15::verify(const std::vector<unsigned char>& image) {
     }
 
     EVP_PKEY* rawPubkey = nullptr;
-    if (openSslSupport->getEcPubkey(header.ecdsa_pubkey, sizeof(header.ecdsa_pubkey), header.ecdsa_algo, &rawPubkey) != 0) {
+    if (openSslKeys->getEcPubkey(header.ecdsa_pubkey, sizeof(header.ecdsa_pubkey), header.ecdsa_algo, &rawPubkey) != 0) {
         std::cerr << "Failed to get EVP_PKEY from public key" << std::endl;
         return -1;
     }
@@ -108,13 +108,13 @@ int STM32ImageFormatMP15::verify(const std::vector<unsigned char>& image) {
     }
 }
 
-int STM32ImageFormatMP15::sign(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase) {
+int STM32ImageFormatV1::sign(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase) {
     if (image.size() < sizeof(STM32HeaderV1)) {
         std::cerr << "Image too short for an STM32 v1 header: got " << image.size() << " bytes" << std::endl;
         return -1;
     }
     EVP_PKEY* rawKey = nullptr;
-    if (openSslSupport->loadKey(keyDesc, passphrase, &rawKey) != 0) {
+    if (openSslKeys->loadKey(keyDesc, passphrase, &rawKey) != 0) {
         std::cerr << "Failed to load key: " << keyDesc << std::endl;
         return -1;
     }
@@ -125,14 +125,14 @@ int STM32ImageFormatMP15::sign(std::vector<unsigned char>& image, const std::str
     header.reserved1 = 0;
     header.reserved2 = 0;
 
-    std::vector<unsigned char> pubkey = openSslSupport->getRawPubkey(key.get());
+    std::vector<unsigned char> pubkey = openSslKeys->getRawPubkey(key.get());
     if (pubkey.empty()) {
         return -1;
     }
-    utils->printHex("Public Key", pubkey);
+    logger->printHex("Public Key", pubkey);
 
     std::memcpy(header.ecdsa_pubkey, pubkey.data(), pubkey.size());
-    int algo = openSslSupport->getKeyAlgorithm(key.get());
+    int algo = openSslKeys->getKeyAlgorithm(key.get());
     if (algo < 0) {
         return -1;
     }
@@ -181,14 +181,14 @@ int STM32ImageFormatMP15::sign(std::vector<unsigned char>& image, const std::str
         std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
         return -1;
     }
-    utils->printHex("ECC key(r)", rBytes);
-    utils->printHex("ECC key(s)", sBytes);
+    logger->printHex("ECC key(r)", rBytes);
+    logger->printHex("ECC key(s)", sBytes);
 
     std::vector<unsigned char> signature(sizeof(header.signature));
     std::memset(signature.data(), 0, signature.size());
     std::memcpy(signature.data() + (sizeof(header.signature) / 2 - rBytes.size()), rBytes.data(), rBytes.size());
     std::memcpy(signature.data() + sizeof(header.signature) - sBytes.size(), sBytes.data(), sBytes.size());
-    utils->printHex("Signature", signature);
+    logger->printHex("Signature", signature);
 
     std::memcpy(image.data() + offsetof(STM32HeaderV1, signature), signature.data(), signature.size());
 

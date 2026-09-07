@@ -5,16 +5,16 @@
 
 #include <memory>
 
-class OpenSSLSupport;
-class Utils;
+class OpenSslKeys;
+class Logger;
 
 class STM32ImageFormatFactory {
 public:
-    STM32ImageFormatFactory(std::shared_ptr<OpenSSLSupport> openSslSupport, std::shared_ptr<Utils> utils);
+    STM32ImageFormatFactory(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger);
 
     std::unique_ptr<STM32ImageFormat> getFormat(int headerVersion, int headerMinorVersion) const;
 
 private:
-    std::shared_ptr<OpenSSLSupport> openSslSupport;
-    std::shared_ptr<Utils> utils;
+    std::shared_ptr<OpenSslKeys> openSslKeys;
+    std::shared_ptr<Logger> logger;
 };

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "utils.hpp"
+#include "logger.hpp"
 
 #include <iomanip>
 #include <iostream>
 
-void Utils::setVerbose(bool enabled) {
+void Logger::setVerbose(bool enabled) {
     verbose = enabled;
 }
 
-bool Utils::isVerbose() const {
+bool Logger::isVerbose() const {
     return verbose;
 }
 
-void Utils::printHex(const std::string& label, const std::vector<unsigned char>& data) const {
+void Logger::printHex(const std::string& label, const std::vector<unsigned char>& data) const {
     if (!verbose)
         return;
     std::cout << label << ": ";

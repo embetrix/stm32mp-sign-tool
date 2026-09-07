@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "header-manager.hpp"
+#include "stm32-header-reader.hpp"
 
 #include <cstring>
 #include <stdexcept>
 #include <string>
 
-HeaderManager::HeaderManager(const std::vector<unsigned char>& image) {
+STM32HeaderReader::STM32HeaderReader(const std::vector<unsigned char>& image) {
     if (image.size() < sizeof(commonHeader)) {
         throw std::runtime_error("Image too short for an STM32 header");
     }
@@ -18,10 +18,10 @@ HeaderManager::HeaderManager(const std::vector<unsigned char>& image) {
     }
 }
 
-int HeaderManager::getHeaderVersion() const {
+int STM32HeaderReader::getHeaderVersion() const {
     return (commonHeader.hdr_version >> 16) & 0xFF;
 }
 
-int HeaderManager::getHeaderMinorVersion() const {
+int STM32HeaderReader::getHeaderMinorVersion() const {
     return (commonHeader.hdr_version >> 8) & 0xFF;
 }

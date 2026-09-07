@@ -2,16 +2,16 @@
 
 #include "stm32mp-image-signer.hpp"
 
-#include "header-manager.hpp"
-#include "utils.hpp"
+#include "stm32-header-reader.hpp"
+#include "logger.hpp"
 
 #include <iostream>
 #include <stdexcept>
 #include <utility>
 
-STM32MPImageSigner::STM32MPImageSigner(std::shared_ptr<OpenSSLSupport> openSslSupport, std::shared_ptr<Utils> utils)
-    : utils(utils),
-      imageFormatFactory(std::move(openSslSupport), std::move(utils)) {
+STM32MPImageSigner::STM32MPImageSigner(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger)
+    : logger(logger),
+      imageFormatFactory(std::move(openSslKeys), std::move(logger)) {
 }
 
 STM32ImageFormat* STM32MPImageSigner::getImageFormat(int headerVersion, int headerMinorVersion) {
@@ -28,15 +28,15 @@ STM32ImageFormat* STM32MPImageSigner::getImageFormat(int headerVersion, int head
 
 void STM32MPImageSigner::printUnsupportedFormat(int headerVersion, int headerMinorVersion) const {
     switch (headerVersion) {
-        case HeaderManager::STM32_HEADER_V2:
+        case STM32HeaderReader::STM32_HEADER_V2:
             switch (headerMinorVersion) {
-                case HeaderManager::STM32_HEADER_MINOR_V0:
+                case STM32HeaderReader::STM32_HEADER_MINOR_V0:
                     std::cerr << "STM32 header v2.0 (STM32MP13x lines) is not supported yet" << std::endl;
                     return;
-                case HeaderManager::STM32_HEADER_MINOR_V2:
+                case STM32HeaderReader::STM32_HEADER_MINOR_V2:
                     std::cerr << "STM32 header v2.2 (STM32MP23x lines and STM32MP25x lines) is not supported yet" << std::endl;
                     return;
-                case HeaderManager::STM32_HEADER_MINOR_V3:
+                case STM32HeaderReader::STM32_HEADER_MINOR_V3:
                     std::cerr << "STM32 header v2.3 (STM32MP21x lines) is not supported yet" << std::endl;
                     return;
                 case -1:
@@ -56,7 +56,7 @@ void STM32MPImageSigner::printUnsupportedFormat(int headerVersion, int headerMin
 
 int STM32MPImageSigner::verifyImage(const std::vector<unsigned char>& image) {
     try {
-        HeaderManager headerManager(image);
+        STM32HeaderReader headerManager(image);
         int headerVersion = headerManager.getHeaderVersion();
         STM32ImageFormat* format = getImageFormat(headerVersion, -1);
         if (!format) {
@@ -80,10 +80,10 @@ int STM32MPImageSigner::signImage(std::vector<unsigned char>& image, const std::
         return -1;
     }
     try {
-        HeaderManager headerManager(image);
+        STM32HeaderReader headerManager(image);
         int headerVersion = headerManager.getHeaderVersion();
         int headerMinorVersion = -1;
-        if (headerVersion == HeaderManager::STM32_HEADER_V2) {
+        if (headerVersion == STM32HeaderReader::STM32_HEADER_V2) {
             headerMinorVersion = headerManager.getHeaderMinorVersion();
         }
         STM32ImageFormat* format = getImageFormat(headerVersion, headerMinorVersion);
@@ -91,7 +91,7 @@ int STM32MPImageSigner::signImage(std::vector<unsigned char>& image, const std::
             printUnsupportedFormat(headerVersion, headerMinorVersion);
             return -1;
         }
-        if (headerVersion == HeaderManager::STM32_HEADER_V1 && utils->isVerbose()) {
+        if (headerVersion == STM32HeaderReader::STM32_HEADER_V1 && logger->isVerbose()) {
             std::cout << "STM32 header v1 (STM32MP15x lines)" << std::endl;
         }
         return format->sign(image, keyDesc, passphrase);

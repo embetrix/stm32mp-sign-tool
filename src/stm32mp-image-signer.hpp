@@ -8,12 +8,12 @@
 #include <string>
 #include <vector>
 
-class OpenSSLSupport;
-class Utils;
+class OpenSslKeys;
+class Logger;
 
 class STM32MPImageSigner {
 public:
-    STM32MPImageSigner(std::shared_ptr<OpenSSLSupport> openSslSupport, std::shared_ptr<Utils> utils);
+    STM32MPImageSigner(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger);
 
     int verifyImage(const std::vector<unsigned char>& image);
     int signImage(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase);
@@ -22,7 +22,7 @@ private:
     STM32ImageFormat* getImageFormat(int headerVersion, int headerMinorVersion);
     void printUnsupportedFormat(int headerVersion, int headerMinorVersion) const;
 
-    std::shared_ptr<Utils> utils;
+    std::shared_ptr<Logger> logger;
     STM32ImageFormatFactory imageFormatFactory;
     std::unique_ptr<STM32ImageFormat> imageFormat;
     int selectedHeaderVersion = -1;

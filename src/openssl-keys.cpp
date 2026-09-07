@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "openssl-support.hpp"
+#include "openssl-keys.hpp"
 
-#include "utils.hpp"
+#include "logger.hpp"
 
 #include <cstring>
 #include <fstream>
@@ -51,7 +51,7 @@ using OssStoreInfoPtr = std::unique_ptr<OSSL_STORE_INFO, OssStoreInfoDeleter>;
 using UiMethodPtr = std::unique_ptr<UI_METHOD, UiMethodDeleter>;
 using FilePtr = std::unique_ptr<FILE, FileDeleter>;
 
-int OpenSSLSupport::uiReadString(UI* ui, UI_STRING* uis) {
+int OpenSslKeys::uiReadString(UI* ui, UI_STRING* uis) {
     switch (UI_get_string_type(uis)) {
         case UIT_PROMPT:
         case UIT_VERIFY: {
@@ -66,11 +66,11 @@ int OpenSSLSupport::uiReadString(UI* ui, UI_STRING* uis) {
     }
 }
 
-void OpenSSLSupport::setPkcs11Module(const std::string& modulePath) {
+void OpenSslKeys::setPkcs11Module(const std::string& modulePath) {
     pkcs11Module = modulePath;
 }
 
-int OpenSSLSupport::getEcPubkey(const unsigned char* pubkey, size_t pubkeyLen, uint32_t algo, EVP_PKEY** pkey) {
+int OpenSslKeys::getEcPubkey(const unsigned char* pubkey, size_t pubkeyLen, uint32_t algo, EVP_PKEY** pkey) {
     *pkey = nullptr;
     if (!pubkey) {
         std::cerr << "Public key is empty" << std::endl;
@@ -127,7 +127,7 @@ int OpenSSLSupport::getEcPubkey(const unsigned char* pubkey, size_t pubkeyLen, u
     return ret;
 }
 
-std::vector<unsigned char> OpenSSLSupport::getRawPubkey(EVP_PKEY* key) {
+std::vector<unsigned char> OpenSslKeys::getRawPubkey(EVP_PKEY* key) {
     if (!key) {
         std::cerr << "Invalid EVP_PKEY" << std::endl;
         return {};
@@ -154,7 +154,7 @@ std::vector<unsigned char> OpenSSLSupport::getRawPubkey(EVP_PKEY* key) {
     return pubkey;
 }
 
-int OpenSSLSupport::getKeyAlgorithm(EVP_PKEY* key) {
+int OpenSslKeys::getKeyAlgorithm(EVP_PKEY* key) {
     if (!key) {
         std::cerr << "Invalid EVP_PKEY" << std::endl;
         return -1;
@@ -176,7 +176,7 @@ int OpenSSLSupport::getKeyAlgorithm(EVP_PKEY* key) {
     return -1;
 }
 
-int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::optional<std::string>& passphrase, EVP_PKEY** pkey) {
+int OpenSslKeys::loadKey(const std::string& keyDesc, const std::optional<std::string>& passphrase, EVP_PKEY** pkey) {
     *pkey = nullptr;
     if (keyDesc.empty()) {
         std::cerr << "Invalid arguments" << std::endl;
@@ -257,7 +257,7 @@ int OpenSSLSupport::loadKey(const std::string& keyDesc, const std::optional<std:
     return 0;
 }
 
-int OpenSSLSupport::hashPubkey(const std::string& keyDesc, const std::optional<std::string>& passphrase, const std::string& outputFile, const Utils& utils) {
+int OpenSslKeys::hashPubkey(const std::string& keyDesc, const std::optional<std::string>& passphrase, const std::string& outputFile, const Logger& logger) {
     if (keyDesc.empty() || outputFile.empty()) {
         std::cerr << "Invalid arguments" << std::endl;
         return -1;
@@ -280,7 +280,7 @@ int OpenSSLSupport::hashPubkey(const std::string& keyDesc, const std::optional<s
 
     std::vector<unsigned char> phash(SHA256_DIGEST_LENGTH);
     SHA256(pubkey.data(), pubkey.size(), phash.data());
-    utils.printHex("Pubkey(sha256)", phash);
+    logger.printHex("Pubkey(sha256)", phash);
 
     std::ofstream output(outputFile, std::ios::binary);
     if (!output) {

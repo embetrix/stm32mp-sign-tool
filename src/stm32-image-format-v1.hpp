@@ -9,12 +9,12 @@
 #include <string>
 #include <vector>
 
-class OpenSSLSupport;
-class Utils;
+class OpenSslKeys;
+class Logger;
 
-class STM32ImageFormatMP15 : public STM32ImageFormat {
+class STM32ImageFormatV1 : public STM32ImageFormat {
 public:
-    STM32ImageFormatMP15(std::shared_ptr<OpenSSLSupport> openSslSupport, std::shared_ptr<Utils> utils);
+    STM32ImageFormatV1(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger);
 
     int verify(const std::vector<unsigned char>& image) override;
     int sign(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase) override;
@@ -41,6 +41,6 @@ private:
     STM32HeaderV1 unpackHeader(const std::vector<unsigned char>& image);
     void repackHeader(std::vector<unsigned char>& image, const STM32HeaderV1& header);
 
-    std::shared_ptr<OpenSSLSupport> openSslSupport;
-    std::shared_ptr<Utils> utils;
+    std::shared_ptr<OpenSslKeys> openSslKeys;
+    std::shared_ptr<Logger> logger;
 };

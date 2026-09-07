@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <vector>
 
-class HeaderManager {
+class STM32HeaderReader {
 public:
     enum STM32HeaderVersion {
         STM32_HEADER_V1 = 1,
@@ -17,7 +17,7 @@ public:
         STM32_HEADER_MINOR_V3 = 3,
     };
 
-    explicit HeaderManager(const std::vector<unsigned char>& image);
+    explicit STM32HeaderReader(const std::vector<unsigned char>& image);
 
     int getHeaderVersion() const;
     int getHeaderMinorVersion() const;

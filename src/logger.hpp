@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-class Utils {
+class Logger {
 public:
     bool isVerbose() const;
     void printHex(const std::string& label, const std::vector<unsigned char>& data) const;

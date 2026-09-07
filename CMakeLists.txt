@@ -17,12 +17,12 @@ find_package(OpenSSL REQUIRED)
 add_executable(
     stm32mp-sign-tool
     src/stm32mp-sign-tool.cpp
-    src/openssl-support.cpp
-    src/utils.cpp
+    src/openssl-keys.cpp
+    src/logger.cpp
     src/stm32mp-image-signer.cpp
-    src/header-manager.cpp
+    src/stm32-header-reader.cpp
     src/stm32-image-format-factory.cpp
-    src/stm32-image-format-mp15.cpp
+    src/stm32-image-format-v1.cpp
 )
 
 # Headers live next to the sources

@@ -30,9 +30,9 @@
 #include <stdexcept>
 #include <openssl/crypto.h>
 
-#include "openssl-support.hpp"
+#include "openssl-keys.hpp"
 #include "stm32mp-image-signer.hpp"
-#include "utils.hpp"
+#include "logger.hpp"
 
 namespace {
 
@@ -157,8 +157,8 @@ CliOptions parseCliOptions(int argc, char* argv[]) {
  *******************************************************************/
 
 int main(int argc, char* argv[]) {
-    auto utils = std::make_shared<Utils>();
-    auto openSslSupport = std::make_shared<OpenSSLSupport>();
+    auto logger = std::make_shared<Logger>();
+    auto openSslKeys = std::make_shared<OpenSslKeys>();
 
     CliOptions options = parseCliOptions(argc, argv);
     SecretScrubber scrubber(options);
@@ -166,9 +166,9 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    utils->setVerbose(options.verbose);
+    logger->setVerbose(options.verbose);
     if (!options.pkcs11Module.empty()) {
-        openSslSupport->setPkcs11Module(options.pkcs11Module);
+        openSslKeys->setPkcs11Module(options.pkcs11Module);
     }
 
     if (options.keyDesc.empty()) {
@@ -177,7 +177,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (!options.inputFile.empty()) {
-        STM32MPImageSigner imageSigner(openSslSupport, utils);
+        STM32MPImageSigner imageSigner(openSslKeys, logger);
         std::ifstream imageFile(options.inputFile, std::ios::binary);
         std::vector<unsigned char> image((std::istreambuf_iterator<char>(imageFile)), std::istreambuf_iterator<char>());
         imageFile.close();
@@ -194,7 +194,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (!options.outputHash.empty()) {
-        if (openSslSupport->hashPubkey(options.keyDesc, options.passphrase, options.outputHash, *utils) != 0) {
+        if (openSslKeys->hashPubkey(options.keyDesc, options.passphrase, options.outputHash, *logger) != 0) {
             return -1;
         }
     }
