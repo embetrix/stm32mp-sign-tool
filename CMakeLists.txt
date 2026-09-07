@@ -9,14 +9,17 @@ find_package(OpenSSL REQUIRED)
 # Add the executable
 add_executable(
     stm32mp-sign-tool
-    stm32mp-sign-tool.cpp
-    openssl-support.cpp
-    utils.cpp
-    stm32mp-image-signer.cpp
-    header-manager.cpp
-    stm32-image-format-factory.cpp
-    stm32-image-format-mp15.cpp
+    src/stm32mp-sign-tool.cpp
+    src/openssl-support.cpp
+    src/utils.cpp
+    src/stm32mp-image-signer.cpp
+    src/header-manager.cpp
+    src/stm32-image-format-factory.cpp
+    src/stm32-image-format-mp15.cpp
 )
+
+# Headers live next to the sources
+target_include_directories(stm32mp-sign-tool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Link the libraries
 target_link_libraries(stm32mp-sign-tool ${OPENSSL_LIBRARIES})

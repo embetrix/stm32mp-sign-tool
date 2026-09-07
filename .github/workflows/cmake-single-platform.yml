@@ -26,7 +26,7 @@ jobs:
       run: sudo apt-get update && sudo apt-get --no-install-recommends install -y cppcheck openssl libssl-dev python3 softhsm2 opensc pkcs11-provider
 
     - name: Cppcheck
-      run: cppcheck --enable=all --suppress=missingIncludeSystem *.cpp
+      run: cppcheck --enable=all --suppress=missingIncludeSystem src
 
     - name: Configure CMake
       # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
