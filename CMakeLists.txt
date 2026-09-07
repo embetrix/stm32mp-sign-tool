@@ -23,6 +23,7 @@ add_executable(
     src/stm32-header-reader.cpp
     src/stm32-image-format-factory.cpp
     src/stm32-image-format-v1.cpp
+    src/stm32-image-format-v2.cpp
 )
 
 # Headers live next to the sources
