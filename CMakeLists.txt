@@ -3,6 +3,13 @@ cmake_minimum_required(VERSION 3.10)
 # Set the project name
 project(stm32mp-sign-tool)
 
+# std::optional and the non-const std::string::data() overload used to wipe
+# secrets both require C++17; do not inherit the compiler default (GCC <= 10
+# defaults to C++14, where this fails to compile).
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 # Find OpenSSL
 find_package(OpenSSL REQUIRED)
 
