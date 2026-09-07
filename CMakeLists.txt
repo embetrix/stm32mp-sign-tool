@@ -30,4 +30,8 @@ install(TARGETS stm32mp-sign-tool DESTINATION bin)
 
 # Enable testing
 enable_testing()
-add_test(NAME stm32mp-sign-tool COMMAND ./stm32mp-sign-tool_test.sh)
+add_test(
+    NAME stm32mp-sign-tool
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/stm32mp-sign-tool_test.sh
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:stm32mp-sign-tool>
+)
