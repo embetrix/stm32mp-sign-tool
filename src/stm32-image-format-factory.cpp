@@ -5,6 +5,7 @@
 #include "stm32-header-reader.hpp"
 #include "openssl-keys.hpp"
 #include "stm32-image-format-v1.hpp"
+#include "stm32-image-format-v2.hpp"
 #include "logger.hpp"
 
 #include <stdexcept>
@@ -30,6 +31,7 @@ std::unique_ptr<STM32ImageFormat> STM32ImageFormatFactory::getFormat(int headerV
                 case STM32HeaderReader::STM32_HEADER_MINOR_V0:
                 case STM32HeaderReader::STM32_HEADER_MINOR_V2:
                 case STM32HeaderReader::STM32_HEADER_MINOR_V3:
+                    return std::make_unique<STM32ImageFormatV2>(openSslKeys, logger, headerMinorVersion);
                 default:
                     return nullptr;
             }

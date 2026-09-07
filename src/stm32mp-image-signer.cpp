@@ -28,17 +28,10 @@ STM32ImageFormat* STM32MPImageSigner::getImageFormat(int headerVersion, int head
 
 void STM32MPImageSigner::printUnsupportedFormat(int headerVersion, int headerMinorVersion) const {
     switch (headerVersion) {
+        // The known v2 minor versions reach STM32ImageFormatV2, which reports
+        // them itself; only an unread or unrecognised minor lands here.
         case STM32HeaderReader::STM32_HEADER_V2:
             switch (headerMinorVersion) {
-                case STM32HeaderReader::STM32_HEADER_MINOR_V0:
-                    std::cerr << "STM32 header v2.0 (STM32MP13x lines) is not supported yet" << std::endl;
-                    return;
-                case STM32HeaderReader::STM32_HEADER_MINOR_V2:
-                    std::cerr << "STM32 header v2.2 (STM32MP23x lines and STM32MP25x lines) is not supported yet" << std::endl;
-                    return;
-                case STM32HeaderReader::STM32_HEADER_MINOR_V3:
-                    std::cerr << "STM32 header v2.3 (STM32MP21x lines) is not supported yet" << std::endl;
-                    return;
                 case -1:
                     std::cerr << "STM32 header v2 (STM32MP13x lines and STM32MP2 series) is not supported yet" << std::endl;
                     return;
