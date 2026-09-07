@@ -23,8 +23,10 @@
 #include <fstream>
 #include <getopt.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
+#include <cstring>
 #include <stdexcept>
 #include <openssl/crypto.h>
 
@@ -36,13 +38,54 @@ namespace {
 
 struct CliOptions {
     std::string keyDesc;
-    std::string passphrase;
+    // Empty and absent are different things: an absent passphrase lets OpenSSL
+    // prompt, an empty one is a real (empty) password. Do not collapse them.
+    std::optional<std::string> passphrase;
     std::string inputFile;
     std::string outputFile;
     std::string outputHash;
     std::string pkcs11Module;
     bool verbose = false;
     bool valid = true;
+
+    // The originals these were copied from, still sitting in argv[] where
+    // ps(1) and /proc/self/cmdline expose them to every other user on the box.
+    // The copies above are not the only thing that has to be wiped.
+    char* keyDescArg = nullptr;
+    char* passphraseArg = nullptr;
+};
+
+void cleanse(char* arg) {
+    if (arg != nullptr) {
+        OPENSSL_cleanse(arg, std::strlen(arg));
+    }
+}
+
+void cleanse(std::string& str) {
+    if (!str.empty()) {
+        OPENSSL_cleanse(str.data(), str.size());
+    }
+}
+
+// Wipes the key descriptor (which may be a PKCS#11 URI carrying a PIN) and the
+// passphrase on every exit path out of main(), copies and argv[] originals alike.
+class SecretScrubber {
+public:
+    explicit SecretScrubber(CliOptions& options) : options(options) {}
+    SecretScrubber(const SecretScrubber&) = delete;
+    SecretScrubber& operator=(const SecretScrubber&) = delete;
+
+    ~SecretScrubber() {
+        if (options.passphrase) {
+            cleanse(*options.passphrase);
+        }
+        cleanse(options.keyDesc);
+        cleanse(options.passphraseArg);
+        cleanse(options.keyDescArg);
+    }
+
+private:
+    CliOptions& options;
 };
 
 void usage(const std::string& argv0) {
@@ -63,9 +106,11 @@ CliOptions parseCliOptions(int argc, char* argv[]) {
         switch (opt) {
             case 'k':
                 options.keyDesc = optarg;
+                options.keyDescArg = optarg;
                 break;
             case 'p':
                 options.passphrase = optarg;
+                options.passphraseArg = optarg;
                 break;
             case 'v':
                 options.verbose = true;
@@ -116,6 +161,7 @@ int main(int argc, char* argv[]) {
     auto openSslSupport = std::make_shared<OpenSSLSupport>();
 
     CliOptions options = parseCliOptions(argc, argv);
+    SecretScrubber scrubber(options);
     if (!options.valid) {
         return -1;
     }
@@ -151,16 +197,6 @@ int main(int argc, char* argv[]) {
         if (openSslSupport->hashPubkey(options.keyDesc, options.passphrase, options.outputHash, *utils) != 0) {
             return -1;
         }
-    }
-
-    // Securely erase the passphrase
-    if (!options.passphrase.empty()) {
-        OPENSSL_cleanse(options.passphrase.data(), options.passphrase.size());
-    }
-
-    // Securely erase the key_desc in case it's a pkcs11 uri with pin
-    if (!options.keyDesc.empty()) {
-        OPENSSL_cleanse(options.keyDesc.data(), options.keyDesc.size());
     }
 
     return 0;
