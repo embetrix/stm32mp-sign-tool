@@ -76,7 +76,7 @@ int OpenSslKeys::getEcPubkey(const unsigned char* pubkey, size_t pubkeyLen, uint
         std::cerr << "Public key is empty" << std::endl;
         return -1;
     }
-    if (pubkeyLen != 64) {
+    if (pubkeyLen != PUBLIC_KEY_SIZE) {
         std::cerr << "Invalid public key length" << std::endl;
         return -1;
     }
@@ -141,7 +141,7 @@ std::vector<unsigned char> OpenSslKeys::getRawPubkey(EVP_PKEY* key) {
 
     std::vector<unsigned char> pubkey;
     const OSSL_PARAM* pub = OSSL_PARAM_locate_const(params.get(), OSSL_PKEY_PARAM_PUB_KEY);
-    if (pub && pub->data_size == 65) {
+    if (pub && pub->data_size == PUBLIC_KEY_SIZE + 1) {
         const unsigned char* point = static_cast<const unsigned char*>(pub->data);
         if (point[0] == 0x04) {
             pubkey.assign(point + 1, point + pub->data_size);
@@ -184,76 +184,192 @@ int OpenSslKeys::loadKey(const std::string& keyDesc, const std::optional<std::st
     }
 
     if (keyDesc.rfind("pkcs11:", 0) == 0) {
-        if (!pkcs11Module.empty()) {
-            setenv("PKCS11_PROVIDER_MODULE", pkcs11Module.c_str(), 1);
-        }
+        return loadKeyFromPkcs11(keyDesc, passphrase, pkey);
+    }
+    return loadKeyFromPem(keyDesc, passphrase, pkey);
+}
 
-        if (!defaultProvider) {
-            defaultProvider.reset(OSSL_PROVIDER_load(nullptr, "default"));
-        }
-        if (!pkcs11Provider) {
-            pkcs11Provider.reset(OSSL_PROVIDER_load(nullptr, "pkcs11"));
-        }
-        if (!pkcs11Provider) {
-            std::cerr << "Failed to load PKCS#11 provider" << std::endl;
+int OpenSslKeys::initializePkcs11Provider() {
+    if (!pkcs11Module.empty()) {
+        setenv("PKCS11_PROVIDER_MODULE", pkcs11Module.c_str(), 1);
+    }
+
+    if (!defaultProvider) {
+        defaultProvider.reset(OSSL_PROVIDER_load(nullptr, "default"));
+    }
+    if (!pkcs11Provider) {
+        pkcs11Provider.reset(OSSL_PROVIDER_load(nullptr, "pkcs11"));
+    }
+    if (!pkcs11Provider) {
+        std::cerr << "Failed to load PKCS#11 provider" << std::endl;
+        return -1;
+    }
+
+    return 0;
+}
+
+int OpenSslKeys::loadKeyFromPkcs11(const std::string& keyDesc, const std::optional<std::string>& passphrase, EVP_PKEY** pkey) {
+    if (initializePkcs11Provider() != 0) {
+        return -1;
+    }
+
+    UiMethodPtr uiMethod;
+    if (passphrase.has_value()) {
+        uiMethod.reset(UI_create_method("stm32mp-sign-tool pin reader"));
+        if (!uiMethod || UI_method_set_reader(uiMethod.get(), uiReadString) != 0) {
+            std::cerr << "Failed to set up PIN reader" << std::endl;
             return -1;
         }
+    }
 
-        UiMethodPtr uiMethod;
-        if (passphrase.has_value()) {
-            uiMethod.reset(UI_create_method("stm32mp-sign-tool pin reader"));
-            if (!uiMethod || UI_method_set_reader(uiMethod.get(), uiReadString) != 0) {
-                std::cerr << "Failed to set up PIN reader" << std::endl;
+    OssStoreCtxPtr store(OSSL_STORE_open(keyDesc.c_str(), uiMethod.get(),
+                                         passphrase.has_value() ? const_cast<char*>(passphrase->c_str()) : nullptr,
+                                         nullptr, nullptr));
+    if (!store) {
+        std::cerr << "Failed to open PKCS#11 store: " << keyDesc << std::endl;
+        return -1;
+    }
+
+    EVP_PKEY* loadedPkey = nullptr;
+    OSSL_STORE_expect(store.get(), OSSL_STORE_INFO_PKEY);
+    while (!OSSL_STORE_eof(store.get())) {
+        OssStoreInfoPtr info(OSSL_STORE_load(store.get()));
+        if (!info) {
+            if (OSSL_STORE_error(store.get())) {
+                continue;
+            }
+            break;
+        }
+        if (OSSL_STORE_INFO_get_type(info.get()) == OSSL_STORE_INFO_PKEY) {
+            loadedPkey = OSSL_STORE_INFO_get1_PKEY(info.get());
+            break;
+        }
+    }
+
+    if (!loadedPkey) {
+        std::cerr << "Failed to load private key from PKCS#11: " << keyDesc << std::endl;
+        return -1;
+    }
+    *pkey = loadedPkey;
+    return 0;
+}
+
+int OpenSslKeys::loadKeyFromPem(const std::string& keyDesc, const std::optional<std::string>& passphrase, EVP_PKEY** pkey) {
+    FilePtr keyFp(fopen(keyDesc.c_str(), "r"));
+    if (!keyFp) {
+        std::cerr << "Failed to open key file" << std::endl;
+        return -1;
+    }
+
+    EVP_PKEY* loadedPkey = PEM_read_PrivateKey(
+        keyFp.get(), nullptr, nullptr,
+        passphrase.has_value() ? static_cast<void*>(const_cast<char*>(passphrase->c_str())) : nullptr);
+    if (!loadedPkey) {
+        std::cerr << "Failed to read key from file" << std::endl;
+        return -1;
+    }
+    *pkey = loadedPkey;
+    return 0;
+}
+
+int OpenSslKeys::loadPublicKey(const std::string& keyDesc, EVP_PKEY** pkey) {
+    *pkey = nullptr;
+    if (keyDesc.empty()) {
+        std::cerr << "Invalid public key descriptor" << std::endl;
+        return -1;
+    }
+
+    if (keyDesc.rfind("pkcs11:", 0) == 0) {
+        return loadPublicKeyFromPkcs11(keyDesc, pkey);
+    }
+    return loadPublicKeyFromPem(keyDesc, pkey);
+}
+
+int OpenSslKeys::loadPublicKeyFromPkcs11(const std::string& keyDesc, EVP_PKEY** pkey) {
+    if (initializePkcs11Provider() != 0) {
+        return -1;
+    }
+
+    OssStoreCtxPtr store(
+        OSSL_STORE_open(keyDesc.c_str(), nullptr, nullptr, nullptr, nullptr));
+    if (!store) {
+        std::cerr << "Failed to open PKCS#11 store: " << keyDesc << std::endl;
+        return -1;
+    }
+
+    EVP_PKEY* loadedPkey = nullptr;
+    while (!OSSL_STORE_eof(store.get())) {
+        OssStoreInfoPtr info(OSSL_STORE_load(store.get()));
+        if (!info) {
+            if (OSSL_STORE_error(store.get())) {
+                continue;
+            }
+            break;
+        }
+
+        if (OSSL_STORE_INFO_get_type(info.get()) == OSSL_STORE_INFO_PUBKEY) {
+            loadedPkey = OSSL_STORE_INFO_get1_PUBKEY(info.get());
+            break;
+        }
+        if (OSSL_STORE_INFO_get_type(info.get()) == OSSL_STORE_INFO_PKEY) {
+            loadedPkey = OSSL_STORE_INFO_get1_PKEY(info.get());
+            break;
+        }
+    }
+
+    if (!loadedPkey) {
+        std::cerr << "Failed to load public key from PKCS#11: " << keyDesc
+                  << std::endl;
+        return -1;
+    }
+    *pkey = loadedPkey;
+    return 0;
+}
+
+int OpenSslKeys::loadPublicKeyFromPem(const std::string& keyDesc, EVP_PKEY** pkey) {
+    FilePtr keyFp(fopen(keyDesc.c_str(), "r"));
+    if (!keyFp) {
+        std::cerr << "Failed to open public key file" << std::endl;
+        return -1;
+    }
+
+    EVP_PKEY* loadedPkey = PEM_read_PUBKEY(keyFp.get(), nullptr, nullptr, nullptr);
+    if (!loadedPkey) {
+        std::cerr << "Failed to read public key from file" << std::endl;
+        return -1;
+    }
+    *pkey = loadedPkey;
+    return 0;
+}
+
+bool OpenSslKeys::computePublicKeyHash(const unsigned char* publicKey,
+                                      std::size_t publicKeySize,
+                                      uint32_t algorithm,
+                                      unsigned char* hash) {
+    if (!publicKey || publicKeySize != PUBLIC_KEY_SIZE || !hash) {
+        return false;
+    }
+    std::array<unsigned char, sizeof(uint32_t) + PUBLIC_KEY_SIZE> input{};
+    input[0] = static_cast<unsigned char>(algorithm & 0xffU);
+    input[1] = static_cast<unsigned char>((algorithm >> 8U) & 0xffU);
+    input[2] = static_cast<unsigned char>((algorithm >> 16U) & 0xffU);
+    input[3] = static_cast<unsigned char>((algorithm >> 24U) & 0xffU);
+    std::memcpy(input.data() + sizeof(uint32_t), publicKey, publicKeySize);
+    return SHA256(input.data(), input.size(), hash) != nullptr;
+}
+
+int OpenSslKeys::validatePublicKeyHashes(const unsigned char* hashes, std::size_t count) {
+    for (size_t index = 0; index < count; ++index) {
+        for (size_t previous = 0; previous < index; ++previous) {
+            if (std::memcmp(hashes + index * SHA256_DIGEST_LENGTH,
+                            hashes + previous * SHA256_DIGEST_LENGTH,
+                            SHA256_DIGEST_LENGTH) == 0) {
+                std::cerr << "Duplicate public keys at indices " << previous
+                          << " and " << index << std::endl;
                 return -1;
             }
         }
-
-        OssStoreCtxPtr store(OSSL_STORE_open(keyDesc.c_str(), uiMethod.get(),
-                                             passphrase.has_value() ? const_cast<char*>(passphrase->c_str()) : nullptr,
-                                             nullptr, nullptr));
-        if (!store) {
-            std::cerr << "Failed to open PKCS#11 store: " << keyDesc << std::endl;
-            return -1;
-        }
-
-        EvpPkeyPtr loadedPkey;
-        OSSL_STORE_expect(store.get(), OSSL_STORE_INFO_PKEY);
-        while (!OSSL_STORE_eof(store.get())) {
-            OssStoreInfoPtr info(OSSL_STORE_load(store.get()));
-            if (!info) {
-                if (OSSL_STORE_error(store.get())) {
-                    continue;
-                }
-                break;
-            }
-            if (OSSL_STORE_INFO_get_type(info.get()) == OSSL_STORE_INFO_PKEY) {
-                loadedPkey.reset(OSSL_STORE_INFO_get1_PKEY(info.get()));
-                break;
-            }
-        }
-
-        if (!loadedPkey) {
-            std::cerr << "Failed to load private key from PKCS#11: " << keyDesc << std::endl;
-            return -1;
-        }
-        *pkey = loadedPkey.release();
     }
-    else {
-        FilePtr keyFp(fopen(keyDesc.c_str(), "r"));
-        if (!keyFp) {
-            std::cerr << "Failed to open key file" << std::endl;
-            return -1;
-        }
-
-        EvpPkeyPtr loadedPkey(PEM_read_PrivateKey(keyFp.get(), nullptr, nullptr,
-                                                   passphrase.has_value() ? static_cast<void*>(const_cast<char*>(passphrase->c_str())) : nullptr));
-        if (!loadedPkey) {
-            std::cerr << "Failed to read key from file" << std::endl;
-            return -1;
-        }
-        *pkey = loadedPkey.release();
-    }
-
     return 0;
 }
 

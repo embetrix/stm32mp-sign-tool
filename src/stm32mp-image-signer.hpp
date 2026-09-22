@@ -15,8 +15,8 @@ class STM32MPImageSigner {
 public:
     STM32MPImageSigner(std::shared_ptr<OpenSslKeys> openSslKeys,
                        std::shared_ptr<Logger> logger,
-                       std::vector<std::string> publicKeyDescriptors,
-                       int publicKeyIndex);
+                       std::vector<std::string> publicKeyDescriptors = {},
+                       int publicKeyIndex = -1);
 
     int verifyImage(const std::vector<unsigned char>& image);
     int signImage(std::vector<unsigned char>& image, const std::string& keyDesc, const std::optional<std::string>& passphrase);

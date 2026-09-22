@@ -15,8 +15,8 @@ class STM32ImageFormatFactory {
 public:
     STM32ImageFormatFactory(std::shared_ptr<OpenSslKeys> openSslKeys,
                             std::shared_ptr<Logger> logger,
-                            std::vector<std::string> publicKeyDescriptors,
-                            int publicKeyIndex);
+                            std::vector<std::string> publicKeyDescriptors = {},
+                            int publicKeyIndex = -1);
 
     std::unique_ptr<STM32ImageFormat> getFormat(int headerVersion, int headerMinorVersion) const;
 

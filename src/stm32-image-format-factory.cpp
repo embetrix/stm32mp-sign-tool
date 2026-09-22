@@ -9,8 +9,6 @@
 #include "stm32-image-format-v2-2.hpp"
 #include "logger.hpp"
 
-#include <algorithm>
-#include <array>
 #include <stdexcept>
 #include <utility>
 
@@ -40,34 +38,11 @@ std::unique_ptr<STM32ImageFormat> STM32ImageFormatFactory::getFormat(int headerV
                 case STM32HeaderReader::STM32_HEADER_MINOR_V0:
                 case STM32HeaderReader::STM32_HEADER_MINOR_V3:
                     return std::make_unique<STM32ImageFormatV2>(openSslKeys, logger, headerMinorVersion);
-                case STM32HeaderReader::STM32_HEADER_MINOR_V2: {
-                    if (publicKeyDescriptors.size()
-                        != STM32ImageFormatV2_2::PUBLIC_KEY_COUNT) {
-                        throw std::runtime_error(
-                            "STM32 header v2.2 requires exactly eight public keys (-K)");
-                    }
-                    if (publicKeyIndex == -1) {
-                        throw std::runtime_error(
-                            "STM32 header v2.2 requires a public key index (-x)");
-                    }
-                    if (publicKeyIndex < 0
-                        || publicKeyIndex
-                               >= static_cast<int>(STM32ImageFormatV2_2::PUBLIC_KEY_COUNT)) {
-                        throw std::runtime_error(
-                            "STM32 header v2.2 public key index must be between 0 and 7");
-                    }
-
-                    std::array<std::string, STM32ImageFormatV2_2::PUBLIC_KEY_COUNT>
-                        descriptors;
-                    std::copy(publicKeyDescriptors.begin(),
-                              publicKeyDescriptors.end(),
-                              descriptors.begin());
+                case STM32HeaderReader::STM32_HEADER_MINOR_V2:
                     return std::make_unique<STM32ImageFormatV2_2>(openSslKeys,
                                                                   logger,
-                                                                  std::move(descriptors),
-                                                                  static_cast<uint32_t>(
-                                                                      publicKeyIndex));
-                }
+                                                                  publicKeyDescriptors,
+                                                                  publicKeyIndex);
                 default:
                     return nullptr;
             }
