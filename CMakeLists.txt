@@ -44,3 +44,15 @@ add_test(
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/stm32mp-sign-tool_test.sh
     WORKING_DIRECTORY $<TARGET_FILE_DIR:stm32mp-sign-tool>
 )
+
+add_test(
+    NAME stm32mp-sign-tool-v1
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/stm32mp-sign-tool-v1_test.sh
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:stm32mp-sign-tool>
+)
+
+add_test(
+    NAME stm32mp-sign-tool-v2-2
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/stm32mp-sign-tool-v2-2_test.sh
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:stm32mp-sign-tool>
+)

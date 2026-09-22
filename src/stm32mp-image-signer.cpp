@@ -58,9 +58,13 @@ int STM32MPImageSigner::verifyImage(const std::vector<unsigned char>& image) {
     try {
         STM32HeaderReader headerManager(image);
         int headerVersion = headerManager.getHeaderVersion();
-        STM32ImageFormat* format = getImageFormat(headerVersion, -1);
+        int headerMinorVersion = -1;
+        if (headerVersion == STM32HeaderReader::STM32_HEADER_V2) {
+            headerMinorVersion = headerManager.getHeaderMinorVersion();
+        }
+        STM32ImageFormat* format = getImageFormat(headerVersion, headerMinorVersion);
         if (!format) {
-            printUnsupportedFormat(headerVersion, -1);
+            printUnsupportedFormat(headerVersion, headerMinorVersion);
             return -1;
         }
         return format->verify(image);
