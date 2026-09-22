@@ -4,6 +4,27 @@
 
 #include <cstring>
 #include <stdexcept>
+#include <utility>
+
+STM32ImageFormatV2_2::STM32ImageFormatV2_2(
+    std::shared_ptr<OpenSslKeys> openSslKeys,
+    std::shared_ptr<Logger> logger,
+    std::array<std::string, PUBLIC_KEY_COUNT> publicKeyDescriptors,
+    uint32_t publicKeyIndex)
+    : openSslKeys(std::move(openSslKeys)),
+      logger(std::move(logger)),
+      publicKeyDescriptors(std::move(publicKeyDescriptors)),
+      publicKeyIndex(publicKeyIndex) {
+    if (!this->openSslKeys) {
+        throw std::invalid_argument("OpenSslKeys must not be null");
+    }
+    if (!this->logger) {
+        throw std::invalid_argument("Logger must not be null");
+    }
+    if (this->publicKeyIndex >= PUBLIC_KEY_COUNT) {
+        throw std::invalid_argument("Public key index must be between 0 and 7");
+    }
+}
 
 STM32ImageFormatV2_2::STM32HeaderV2_2
 STM32ImageFormatV2_2::unpackHeader(const std::vector<unsigned char>& image) {

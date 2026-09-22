@@ -19,6 +19,7 @@
  * MA 02111-1307 USA
  */
 
+#include <charconv>
 #include <iostream>
 #include <fstream>
 #include <getopt.h>
@@ -38,8 +39,10 @@ namespace {
 
 struct CliOptions {
     std::string keyDesc;
-    // Empty and absent are different things: an absent passphrase lets OpenSSL
-    // prompt, an empty one is a real (empty) password. Do not collapse them.
+    std::vector<std::string> publicKeyDescriptors;
+    int publicKeyIndex = -1;
+    // Empty and absent passphrases are treated differently. If -p is omitted,
+    // OpenSSL can prompt for a passphrase at runtime when one is required.
     std::optional<std::string> passphrase;
     std::string inputFile;
     std::string outputFile;
@@ -89,7 +92,10 @@ private:
 };
 
 void usage(const std::string& argv0) {
-    std::cout << "Usage: " << argv0 << " -k key_desc [-p passphrase/pin] [-m module_path] [-v] [-i input_file] [-o output_file] [-h hash_file]" << std::endl;
+    std::cout << "Usage: " << argv0
+              << " -k key_desc [-K public_key_desc (repeat 8 times) -x public_key_index]"
+              << " [-p passphrase/pin] [-m module_path] [-v] [-i input_file]"
+              << " [-o output_file] [-h hash_file]" << std::endl;
 }
 
 CliOptions parseCliOptions(int argc, char* argv[]) {
@@ -102,12 +108,29 @@ CliOptions parseCliOptions(int argc, char* argv[]) {
     }
 
     int opt;
-    while ((opt = getopt(argc, argv, "k:p:h:vi:o:m:")) != -1) {
+    while ((opt = getopt(argc, argv, "k:K:x:p:h:vi:o:m:")) != -1) {
         switch (opt) {
             case 'k':
                 options.keyDesc = optarg;
                 options.keyDescArg = optarg;
                 break;
+            case 'K':
+                options.publicKeyDescriptors.emplace_back(optarg);
+                break;
+            case 'x': {
+                int publicKeyIndex = -1;
+                const char* end = optarg + std::strlen(optarg);
+                const auto result = std::from_chars(optarg, end, publicKeyIndex);
+                if (result.ec != std::errc{} || result.ptr != end || publicKeyIndex < 0
+                    || publicKeyIndex >= 8) {
+                    std::cerr << "Public key index must be an integer from 0 to 7"
+                              << std::endl;
+                    options.valid = false;
+                    return options;
+                }
+                options.publicKeyIndex = publicKeyIndex;
+                break;
+            }
             case 'p':
                 options.passphrase = optarg;
                 options.passphraseArg = optarg;
@@ -132,6 +155,14 @@ CliOptions parseCliOptions(int argc, char* argv[]) {
                 options.valid = false;
                 return options;
         }
+    }
+
+    if ((!options.publicKeyDescriptors.empty() || options.publicKeyIndex != -1)
+        && (options.publicKeyDescriptors.size() != 8 || options.publicKeyIndex == -1)) {
+        std::cerr << "Options -K and -x must be used together: provide exactly eight "
+                     "public keys and one public key index"
+                  << std::endl;
+        options.valid = false;
     }
 
     return options;
@@ -177,7 +208,10 @@ int main(int argc, char* argv[]) {
     }
 
     if (!options.inputFile.empty()) {
-        STM32MPImageSigner imageSigner(openSslKeys, logger);
+        STM32MPImageSigner imageSigner(openSslKeys,
+                                       logger,
+                                       options.publicKeyDescriptors,
+                                       options.publicKeyIndex);
         std::ifstream imageFile(options.inputFile, std::ios::binary);
         std::vector<unsigned char> image((std::istreambuf_iterator<char>(imageFile)), std::istreambuf_iterator<char>());
         imageFile.close();
