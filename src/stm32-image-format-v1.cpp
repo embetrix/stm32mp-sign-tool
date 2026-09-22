@@ -175,19 +175,19 @@ int STM32ImageFormatV1::sign(std::vector<unsigned char>& image, const std::strin
     const BIGNUM* s;
     ECDSA_SIG_get0(sig.get(), &r, &s);
 
-    std::vector<unsigned char> rBytes(static_cast<size_t>(BN_num_bytes(r)));
-    std::vector<unsigned char> sBytes(static_cast<size_t>(BN_num_bytes(s)));
-    if (BN_bn2binpad(r, rBytes.data(), static_cast<int>(rBytes.size())) < 0 || BN_bn2binpad(s, sBytes.data(), static_cast<int>(sBytes.size())) < 0) {
+    std::vector<unsigned char> signature(sizeof(header.signature));
+    constexpr int half = static_cast<int>(sizeof(header.signature) / 2);
+    if (BN_bn2binpad(r, signature.data(), half) != half
+        || BN_bn2binpad(s, signature.data() + half, half) != half) {
         std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
         return -1;
     }
-    logger->printHex("ECC key(r)", rBytes);
-    logger->printHex("ECC key(s)", sBytes);
-
-    std::vector<unsigned char> signature(sizeof(header.signature));
-    std::memset(signature.data(), 0, signature.size());
-    std::memcpy(signature.data() + (sizeof(header.signature) / 2 - rBytes.size()), rBytes.data(), rBytes.size());
-    std::memcpy(signature.data() + sizeof(header.signature) - sBytes.size(), sBytes.data(), sBytes.size());
+    if (logger->isVerbose()) {
+        logger->printHex("ECC key(r)",
+                         std::vector<unsigned char>(signature.begin(), signature.begin() + half));
+        logger->printHex("ECC key(s)",
+                         std::vector<unsigned char>(signature.begin() + half, signature.end()));
+    }
     logger->printHex("Signature", signature);
 
     std::memcpy(image.data() + offsetof(STM32HeaderV1, signature), signature.data(), signature.size());

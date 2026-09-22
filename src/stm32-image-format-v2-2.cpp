@@ -100,6 +100,18 @@ void STM32ImageFormatV2_2::repackHeader(std::vector<unsigned char>& image,
     std::memset(image.data() + offset, 0, HEADER_SIZE - offset);
 }
 
+std::vector<unsigned char> STM32ImageFormatV2_2::getSignedData(
+    const std::vector<unsigned char>& image, size_t hashEnd) {
+    // ST v2.2 excludes the last eight base-header padding bytes from the signature.
+    constexpr size_t signedHeaderEnd = sizeof(STM32BaseHeaderV2_2) - 8;
+    std::vector<unsigned char> data(
+        image.begin() + offsetof(STM32BaseHeaderV2_2, hdr_version),
+        image.begin() + signedHeaderEnd);
+    data.insert(data.end(), image.begin() + sizeof(STM32BaseHeaderV2_2),
+                image.begin() + static_cast<std::ptrdiff_t>(hashEnd));
+    return data;
+}
+
 int STM32ImageFormatV2_2::verify(const std::vector<unsigned char>& image) {
     if (image.size() < HEADER_SIZE) {
         std::cerr << "Image too short for an STM32 v2.2 header: got " << image.size()
@@ -218,9 +230,7 @@ int STM32ImageFormatV2_2::verify(const std::vector<unsigned char>& image) {
                   << " trailing bytes beyond the declared payload are not authenticated."
                   << std::endl;
     }
-    std::vector<unsigned char> bufferToHash(
-        image.begin() + offsetof(STM32BaseHeaderV2_2, hdr_version),
-        image.begin() + static_cast<std::ptrdiff_t>(hashEnd));
+    std::vector<unsigned char> bufferToHash = getSignedData(image, hashEnd);
     std::vector<unsigned char> hash(SHA256_DIGEST_LENGTH);
     if (!SHA256(bufferToHash.data(), bufferToHash.size(), hash.data())) {
         std::cerr << "Failed to compute SHA-256 hash" << std::endl;
@@ -315,10 +325,128 @@ int STM32ImageFormatV2_2::verify(const std::vector<unsigned char>& image) {
     return -1;
 }
 
-int STM32ImageFormatV2_2::sign(std::vector<unsigned char>&,
-                               const std::string&,
-                               const std::optional<std::string>&) {
-    throw std::runtime_error("STM32 header v2.2 signing is not implemented yet");
+int STM32ImageFormatV2_2::sign(
+    std::vector<unsigned char>& image,
+    const std::string& keyDesc,
+    const std::optional<std::string>& passphrase) {
+    if (image.size() < HEADER_SIZE) {
+        std::cerr << "Image too short for an STM32 v2.2 header: got " << image.size()
+                  << " bytes" << std::endl;
+        return -1;
+    }
+    if (publicKeyDescriptors.size() != PUBLIC_KEY_COUNT) {
+        std::cerr << "STM32 header v2.2 requires exactly eight public keys (-K)" << std::endl;
+        return -1;
+    }
+    if (publicKeyIndex == -1) {
+        std::cerr << "STM32 header v2.2 requires a public key index (-x)" << std::endl;
+        return -1;
+    }
+    if (publicKeyIndex < 0 || publicKeyIndex >= static_cast<int>(PUBLIC_KEY_COUNT)) {
+        std::cerr << "STM32 header v2.2 public key index must be between 0 and 7" << std::endl;
+        return -1;
+    }
+    EVP_PKEY* rawKey = nullptr;
+    if (openSslKeys->loadKey(keyDesc, passphrase, &rawKey) != 0) {
+        std::cerr << "Failed to load key: " << keyDesc << std::endl;
+        return -1;
+    }
+    EvpPkeyPtr key(rawKey);
+
+    STM32HeaderV2_2 header = unpackHeader(image);
+
+    std::memset(header.base_header.reserved, 0, sizeof(header.base_header.reserved));
+    std::memset(header.base_header.padding, 0, sizeof(header.base_header.padding));
+
+    std::vector<unsigned char> pubkey = openSslKeys->getRawPubkey(key.get());
+    if (pubkey.empty()) {
+        return -1;
+    }
+    logger->printHex("Public Key", pubkey);
+
+    int algo = openSslKeys->getKeyAlgorithm(key.get());
+    if (algo < 0) {
+        return -1;
+    }
+
+    if (prepareAuthenticationExtension(header) != 0) {
+        return -1;
+    }
+    const auto& auth = *header.authentication_extension;
+    if (pubkey.size() != sizeof(auth.ecdsa_public_key)
+        || std::memcmp(pubkey.data(), auth.ecdsa_public_key, pubkey.size()) != 0
+        || static_cast<uint32_t>(algo) != auth.ecdsa_algorithm) {
+        std::cerr << "Signing key (-k) does not match public key " << publicKeyIndex
+                  << " of the key table (-K/-x)" << std::endl;
+        return -1;
+    }
+    uint32_t payloadLength = header.base_header.length;
+    if (alignPayload(image, HEADER_SIZE, payloadLength) != 0) {
+        return -1;
+    }
+    header.base_header.length = payloadLength;
+    repackHeader(image, header);
+
+    size_t hashEnd = HEADER_SIZE + header.base_header.length;
+    std::vector<unsigned char> bufferToHash = getSignedData(image, hashEnd);
+
+    EvpMdCtxPtr mdCtx(EVP_MD_CTX_new());
+    std::vector<unsigned char> der;
+    size_t derLen = 0;
+    if (!mdCtx
+        || EVP_DigestSignInit(mdCtx.get(), nullptr, EVP_sha256(), nullptr, key.get()) != 1
+        || EVP_DigestSign(mdCtx.get(),
+                          nullptr,
+                          &derLen,
+                          bufferToHash.data(),
+                          bufferToHash.size())
+               != 1) {
+        std::cerr << "Failed to initialize signing" << std::endl;
+        return -1;
+    }
+    der.resize(derLen);
+    if (EVP_DigestSign(mdCtx.get(),
+                       der.data(),
+                       &derLen,
+                       bufferToHash.data(),
+                       bufferToHash.size())
+        != 1) {
+        std::cerr << "Failed to sign the image" << std::endl;
+        return -1;
+    }
+    der.resize(derLen);
+
+    const unsigned char* derPtr = der.data();
+    EcdsaSigPtr sig(d2i_ECDSA_SIG(nullptr, &derPtr, static_cast<long>(derLen)));
+    if (sig == nullptr) {
+        std::cerr << "Failed to decode ECDSA signature" << std::endl;
+        return -1;
+    }
+
+    const BIGNUM* r;
+    const BIGNUM* s;
+    ECDSA_SIG_get0(sig.get(), &r, &s);
+
+    std::vector<unsigned char> signature(sizeof(header.base_header.signature));
+    constexpr int half = static_cast<int>(sizeof(header.base_header.signature) / 2);
+    if (BN_bn2binpad(r, signature.data(), half) != half
+        || BN_bn2binpad(s, signature.data() + half, half) != half) {
+        std::cerr << "Failed to convert BIGNUM to binary" << std::endl;
+        return -1;
+    }
+    if (logger->isVerbose()) {
+        logger->printHex("ECC key(r)",
+                         std::vector<unsigned char>(signature.begin(), signature.begin() + half));
+        logger->printHex("ECC key(s)",
+                         std::vector<unsigned char>(signature.begin() + half, signature.end()));
+    }
+    logger->printHex("Signature", signature);
+
+    std::memcpy(image.data() + offsetof(STM32BaseHeaderV2_2, signature),
+                signature.data(),
+                signature.size());
+
+    return verify(image);
 }
 
 int STM32ImageFormatV2_2::prepareAuthenticationExtension(STM32HeaderV2_2& header) {

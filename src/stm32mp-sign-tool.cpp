@@ -32,6 +32,7 @@
 #include <openssl/crypto.h>
 
 #include "openssl-keys.hpp"
+#include "stm32-header-reader.hpp"
 #include "stm32mp-image-signer.hpp"
 #include "logger.hpp"
 
@@ -207,6 +208,8 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
+    int headerVersion = -1;
+    int headerMinorVersion = -1;
     if (!options.inputFile.empty()) {
         STM32MPImageSigner imageSigner(openSslKeys,
                                        logger,
@@ -220,6 +223,17 @@ int main(int argc, char* argv[]) {
             return -1;
         }
 
+        STM32HeaderReader headerReader(image);
+        headerVersion = headerReader.getHeaderVersion();
+        if (headerVersion == STM32HeaderReader::STM32_HEADER_V2) {
+            headerMinorVersion = headerReader.getHeaderMinorVersion();
+        }
+        if (headerVersion == STM32HeaderReader::STM32_HEADER_V1
+            && !options.publicKeyDescriptors.empty()) {
+            std::cerr << "Warning: -K and -x only apply to v2.2; ignored for this v1 image."
+                      << std::endl;
+        }
+
         if (!options.outputFile.empty()) {
             std::ofstream output(options.outputFile, std::ios::binary);
             output.write((const char*)image.data(), static_cast<std::streamsize>(image.size()));
@@ -228,7 +242,20 @@ int main(int argc, char* argv[]) {
     }
 
     if (!options.outputHash.empty()) {
-        if (openSslKeys->hashPubkey(options.keyDesc, options.passphrase, options.outputHash, *logger) != 0) {
+        const bool isHeaderV2_2 =
+            (headerVersion == STM32HeaderReader::STM32_HEADER_V2
+             && headerMinorVersion == STM32HeaderReader::STM32_HEADER_MINOR_V2)
+            || (options.inputFile.empty() && !options.publicKeyDescriptors.empty());
+        const int hashStatus = isHeaderV2_2
+                                   ? openSslKeys->hashPublicKeyTable(
+                                         options.publicKeyDescriptors,
+                                         options.outputHash,
+                                         *logger)
+                                   : openSslKeys->hashPubkey(options.keyDesc,
+                                                            options.passphrase,
+                                                            options.outputHash,
+                                                            *logger);
+        if (hashStatus != 0) {
             return -1;
         }
     }

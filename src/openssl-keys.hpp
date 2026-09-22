@@ -38,6 +38,9 @@ public:
     int loadKey(const std::string& keyDesc, const std::optional<std::string>& passphrase, EVP_PKEY** pkey);
     int loadPublicKey(const std::string& keyDesc, EVP_PKEY** pkey);
     int hashPubkey(const std::string& keyDesc, const std::optional<std::string>& passphrase, const std::string& outputFile, const Logger& logger);
+    int hashPublicKeyTable(const std::vector<std::string>& publicKeyDescriptors,
+                           const std::string& outputFile,
+                           const Logger& logger);
 
 private:
     struct OssProviderDeleter {
