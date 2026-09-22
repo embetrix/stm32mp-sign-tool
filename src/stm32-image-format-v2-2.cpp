@@ -59,9 +59,41 @@ STM32ImageFormatV2_2::unpackHeader(const std::vector<unsigned char>& image) {
     return header;
 }
 
-void STM32ImageFormatV2_2::repackHeader(std::vector<unsigned char>&,
-                                        const STM32HeaderV2_2&) {
-    throw std::runtime_error("STM32 header v2.2 repacking is not implemented yet");
+void STM32ImageFormatV2_2::repackHeader(std::vector<unsigned char>& image,
+                                        const STM32HeaderV2_2& header) {
+    constexpr size_t headerSize = 512;
+    size_t offset = 0;
+
+    STM32BaseHeaderV2_2 baseHeader = header.base_header;
+    baseHeader.option_flags |= 1U << 31U;
+    baseHeader.extensions_length = static_cast<uint32_t>(headerSize - sizeof(baseHeader));
+    std::memcpy(image.data() + offset, &baseHeader, sizeof(baseHeader));
+    offset += sizeof(baseHeader);
+
+    if (header.authentication_extension) {
+        std::memcpy(image.data() + offset,
+                    &header.authentication_extension.value(),
+                    sizeof(header.authentication_extension.value()));
+        offset += sizeof(header.authentication_extension.value());
+    }
+
+    if (header.decryption_extension) {
+        std::memcpy(image.data() + offset,
+                    &header.decryption_extension.value(),
+                    sizeof(header.decryption_extension.value()));
+        offset += sizeof(header.decryption_extension.value());
+    }
+
+    STM32PaddingExtensionHeaderV2_2 paddingHeader{};
+    const unsigned char paddingExtensionType[4] = {'S', 'T', 0xff, 0xff};
+    std::memcpy(&paddingHeader.extension_type,
+                paddingExtensionType,
+                sizeof(paddingExtensionType));
+    paddingHeader.extension_length = static_cast<uint32_t>(headerSize - offset);
+    std::memcpy(image.data() + offset, &paddingHeader, sizeof(paddingHeader));
+    offset += sizeof(paddingHeader);
+
+    std::memset(image.data() + offset, 0, headerSize - offset);
 }
 
 int STM32ImageFormatV2_2::verify(const std::vector<unsigned char>&) {
