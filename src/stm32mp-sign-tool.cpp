@@ -22,6 +22,7 @@
 #include <charconv>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 #include <getopt.h>
 #include <memory>
 #include <optional>
@@ -235,9 +236,28 @@ int main(int argc, char* argv[]) {
         }
 
         if (!options.outputFile.empty()) {
+            const auto parent = std::filesystem::path(options.outputFile).parent_path();
+            if (!parent.empty()) {
+                std::error_code error;
+                std::filesystem::create_directories(parent, error);
+                if (error) {
+                    std::cerr << "Failed to create output directory: " << parent
+                              << ": " << error.message() << std::endl;
+                    return -1;
+                }
+            }
+
             std::ofstream output(options.outputFile, std::ios::binary);
+            if (!output) {
+                std::cerr << "Failed to open output file: " << options.outputFile << std::endl;
+                return -1;
+            }
             output.write((const char*)image.data(), static_cast<std::streamsize>(image.size()));
             output.close();
+            if (!output) {
+                std::cerr << "Failed to write output file: " << options.outputFile << std::endl;
+                return -1;
+            }
         }
     }
 
