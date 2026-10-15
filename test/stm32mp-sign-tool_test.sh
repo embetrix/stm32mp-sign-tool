@@ -8,6 +8,7 @@
 # from the build directory (the working directory used by ctest).
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SIGN_TOOL=${SIGN_TOOL:-$PWD/stm32mp-sign-tool}
+VERIFY_TOOL=${VERIFY_TOOL:-$PWD/stm32mp-verify-test}
 
 dd if=/dev/urandom of=image_unsupported.bin bs=1M count=1 > /dev/null 2>&1
 
@@ -27,3 +28,24 @@ if "$SIGN_TOOL" -v -k private_key_unsupported.pem \
     echo "ERROR: v2.3 header image should have been rejected"
     exit 1
 fi
+
+# The verification helper must exercise the same header dispatch as signing.
+"$SIGN_TOOL" -k private_key_unsupported.pem -i image_unsupported.stm32 \
+    -o image_dispatch.stm32.signed
+"$VERIFY_TOOL" image_dispatch.stm32.signed
+
+cp image_dispatch.stm32.signed image_bad_magic.stm32
+printf 'BAD!' | dd of=image_bad_magic.stm32 bs=1 count=4 conv=notrunc 2>/dev/null
+if "$VERIFY_TOOL" image_bad_magic.stm32 2>verify_dispatch.log; then
+    echo "ERROR: invalid magic should have been rejected"
+    exit 1
+fi
+grep -q "Not an STM32 header" verify_dispatch.log
+
+cp image_dispatch.stm32.signed image_bad_version.stm32
+printf '\003' | dd of=image_bad_version.stm32 bs=1 seek=74 count=1 conv=notrunc 2>/dev/null
+if "$VERIFY_TOOL" image_bad_version.stm32 2>verify_dispatch.log; then
+    echo "ERROR: unknown major version should have been rejected"
+    exit 1
+fi
+grep -q "Unknown STM32 header version: 3" verify_dispatch.log
