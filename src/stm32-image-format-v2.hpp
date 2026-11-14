@@ -11,12 +11,7 @@
 class OpenSslKeys;
 class Logger;
 
-// Header v2 (512 bytes): STM32MP13x lines and the STM32MP2 series.
-//
-// The format is recognised and dispatched to, but nothing is implemented yet:
-// sign() and verify() report the unsupported line and fail. What is missing is
-// the v2 layout itself and the extension headers it carries, so an image with
-// a v2 header is still rejected rather than signed incorrectly.
+// Unsupported v2.0/v2.3 placeholder; v2.2 uses STM32ImageFormatV2_2.
 class STM32ImageFormatV2 : public STM32ImageFormat {
 public:
     STM32ImageFormatV2(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger, int headerMinorVersion);

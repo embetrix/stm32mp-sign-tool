@@ -24,6 +24,7 @@ add_executable(
     src/stm32-image-format-factory.cpp
     src/stm32-image-format-v1.cpp
     src/stm32-image-format-v2.cpp
+    src/stm32-image-format-v2-2.cpp
 )
 
 # Headers live next to the sources
@@ -42,4 +43,34 @@ add_test(
     NAME stm32mp-sign-tool
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/stm32mp-sign-tool_test.sh
     WORKING_DIRECTORY $<TARGET_FILE_DIR:stm32mp-sign-tool>
+)
+
+add_test(
+    NAME stm32mp-sign-tool-v1
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/stm32mp-sign-tool-v1_test.sh
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:stm32mp-sign-tool>
+)
+
+add_test(
+    NAME stm32mp-sign-tool-v2-2
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/stm32mp-sign-tool-v2-2_test.sh
+    WORKING_DIRECTORY $<TARGET_FILE_DIR:stm32mp-sign-tool>
+)
+
+# Test driver for verification, which is not exposed by the signing CLI.
+add_executable(stm32mp-verify-test
+    test/stm32mp-verify-test.cpp
+    src/stm32mp-image-signer.cpp
+    src/stm32-header-reader.cpp
+    src/stm32-image-format-factory.cpp
+    src/stm32-image-format-v1.cpp
+    src/stm32-image-format-v2.cpp
+    src/stm32-image-format-v2-2.cpp
+    src/openssl-keys.cpp
+    src/logger.cpp
+)
+target_include_directories(stm32mp-verify-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(stm32mp-verify-test ${OPENSSL_LIBRARIES})
+set_tests_properties(stm32mp-sign-tool stm32mp-sign-tool-v2-2 PROPERTIES
+    ENVIRONMENT "VERIFY_TOOL=$<TARGET_FILE:stm32mp-verify-test>"
 )

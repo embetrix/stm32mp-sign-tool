@@ -9,9 +9,16 @@
 #include <stdexcept>
 #include <utility>
 
-STM32MPImageSigner::STM32MPImageSigner(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger)
+STM32MPImageSigner::STM32MPImageSigner(
+    std::shared_ptr<OpenSslKeys> openSslKeys,
+    std::shared_ptr<Logger> logger,
+    std::vector<std::string> publicKeyDescriptors,
+    int publicKeyIndex)
     : logger(logger),
-      imageFormatFactory(std::move(openSslKeys), std::move(logger)) {
+      imageFormatFactory(std::move(openSslKeys),
+                         std::move(logger),
+                         std::move(publicKeyDescriptors),
+                         publicKeyIndex) {
 }
 
 STM32ImageFormat* STM32MPImageSigner::getImageFormat(int headerVersion, int headerMinorVersion) {
@@ -28,8 +35,8 @@ STM32ImageFormat* STM32MPImageSigner::getImageFormat(int headerVersion, int head
 
 void STM32MPImageSigner::printUnsupportedFormat(int headerVersion, int headerMinorVersion) const {
     switch (headerVersion) {
-        // The known v2 minor versions reach STM32ImageFormatV2, which reports
-        // them itself; only an unread or unrecognised minor lands here.
+        // Known v2 minor versions reach their format implementation; only an
+        // unread or unrecognised minor lands here.
         case STM32HeaderReader::STM32_HEADER_V2:
             switch (headerMinorVersion) {
                 case -1:
@@ -51,9 +58,13 @@ int STM32MPImageSigner::verifyImage(const std::vector<unsigned char>& image) {
     try {
         STM32HeaderReader headerManager(image);
         int headerVersion = headerManager.getHeaderVersion();
-        STM32ImageFormat* format = getImageFormat(headerVersion, -1);
+        int headerMinorVersion = -1;
+        if (headerVersion == STM32HeaderReader::STM32_HEADER_V2) {
+            headerMinorVersion = headerManager.getHeaderMinorVersion();
+        }
+        STM32ImageFormat* format = getImageFormat(headerVersion, headerMinorVersion);
         if (!format) {
-            printUnsupportedFormat(headerVersion, -1);
+            printUnsupportedFormat(headerVersion, headerMinorVersion);
             return -1;
         }
         return format->verify(image);

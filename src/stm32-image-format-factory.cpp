@@ -6,14 +6,21 @@
 #include "openssl-keys.hpp"
 #include "stm32-image-format-v1.hpp"
 #include "stm32-image-format-v2.hpp"
+#include "stm32-image-format-v2-2.hpp"
 #include "logger.hpp"
 
 #include <stdexcept>
 #include <utility>
 
-STM32ImageFormatFactory::STM32ImageFormatFactory(std::shared_ptr<OpenSslKeys> openSslKeys, std::shared_ptr<Logger> logger)
+STM32ImageFormatFactory::STM32ImageFormatFactory(
+    std::shared_ptr<OpenSslKeys> openSslKeys,
+    std::shared_ptr<Logger> logger,
+    std::vector<std::string> publicKeyDescriptors,
+    int publicKeyIndex)
     : openSslKeys(std::move(openSslKeys)),
-      logger(std::move(logger)) {
+      logger(std::move(logger)),
+      publicKeyDescriptors(std::move(publicKeyDescriptors)),
+      publicKeyIndex(publicKeyIndex) {
     if (!this->openSslKeys) {
         throw std::invalid_argument("OpenSslKeys must not be null");
     }
@@ -29,9 +36,13 @@ std::unique_ptr<STM32ImageFormat> STM32ImageFormatFactory::getFormat(int headerV
         case STM32HeaderReader::STM32_HEADER_V2:
             switch (headerMinorVersion) {
                 case STM32HeaderReader::STM32_HEADER_MINOR_V0:
-                case STM32HeaderReader::STM32_HEADER_MINOR_V2:
                 case STM32HeaderReader::STM32_HEADER_MINOR_V3:
                     return std::make_unique<STM32ImageFormatV2>(openSslKeys, logger, headerMinorVersion);
+                case STM32HeaderReader::STM32_HEADER_MINOR_V2:
+                    return std::make_unique<STM32ImageFormatV2_2>(openSslKeys,
+                                                                  logger,
+                                                                  publicKeyDescriptors,
+                                                                  publicKeyIndex);
                 default:
                     return nullptr;
             }
