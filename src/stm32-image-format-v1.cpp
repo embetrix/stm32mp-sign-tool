@@ -139,13 +139,14 @@ int STM32ImageFormatV1::sign(std::vector<unsigned char>& image, const std::strin
     header.ecdsa_algo = static_cast<uint32_t>(algo);
     header.option_flags = 0;
     std::memset(header.padding, 0, sizeof(header.padding));
+    uint32_t payloadLength = header.length;
+    if (alignPayload(image, sizeof(STM32HeaderV1), payloadLength) != 0) {
+        return -1;
+    }
+    header.length = payloadLength;
     repackHeader(image, header);
 
     size_t hashEnd = sizeof(STM32HeaderV1) + header.length;
-    if (hashEnd > image.size()) {
-        std::cerr << "Image too short: expected at least " << hashEnd << " bytes, got " << image.size() << std::endl;
-        return -1;
-    }
     std::vector<unsigned char> bufferToHash(image.begin() + offsetof(STM32HeaderV1, hdr_version), image.begin() + static_cast<std::ptrdiff_t>(hashEnd));
 
     EvpMdCtxPtr mdCtx(EVP_MD_CTX_new());

@@ -54,25 +54,35 @@ with tempfile.TemporaryDirectory(prefix="stm32mp-duplicate-keys-") as directory:
     assert "Signing key (-k) does not match public key 3 of the key table (-K/-x)" in result.stderr, result.stderr
     assert not target.exists()
 
-    for length in [0, 1, 31, 32, 33]:
-        payload = bytes(range(length))
-        alignment_input = root / "alignment.stm32"
-        header = bytearray(source.read_bytes()[:512])
-        struct.pack_into("<I", header, 68, sum(payload))
-        struct.pack_into("<I", header, 76, length)
-        alignment_input.write_bytes(header + payload + b"TRAILING")
-        target = root / "aligned.stm32"
-        arguments = [sign_tool, "-k", str(private), "-p", "pa33w0rd", "-x", "0"]
-        for key in public:
-            arguments += ["-K", str(key)]
-        success(arguments + ["-i", str(alignment_input), "-o", str(target)])
-        aligned = target.read_bytes()
-        expected_length = (length + 31) // 32 * 32
-        assert struct.unpack_from("<I", aligned, 76)[0] == expected_length
-        assert aligned[512:] == payload + bytes(expected_length - length) + b"TRAILING"
-        success([verify_tool, str(target)])
-        success(arguments + ["-i", str(target), "-o", str(alignment_input)])
-        assert alignment_input.read_bytes()[68:] == aligned[68:]
+    for version, header_size in [(1, 256), (2, 512)]:
+        for length in [0, 1, 31, 32, 33]:
+            payload = bytes(range(length))
+            payload_file = root / "alignment.bin"
+            payload_file.write_bytes(payload)
+            alignment_input = root / "alignment.stm32"
+            if version == 1:
+                success(["python3", str(Path(__file__).with_name("stm32mp-gen-image.py")),
+                         str(alignment_input), str(payload_file)])
+            else:
+                header = bytearray(source.read_bytes()[:header_size])
+                struct.pack_into("<I", header, 68, sum(payload))
+                struct.pack_into("<I", header, 76, length)
+                alignment_input.write_bytes(header + payload)
+            alignment_input.write_bytes(alignment_input.read_bytes() + b"TRAILING")
+            target = root / "aligned.stm32"
+            arguments = [sign_tool, "-k", str(private), "-p", "pa33w0rd"]
+            if version == 2:
+                for key in public:
+                    arguments += ["-K", str(key)]
+                arguments += ["-x", "0"]
+            success(arguments + ["-i", str(alignment_input), "-o", str(target)])
+            aligned = target.read_bytes()
+            expected_length = (length + 31) // 32 * 32
+            assert struct.unpack_from("<I", aligned, 76)[0] == expected_length
+            assert aligned[header_size:] == payload + bytes(expected_length - length) + b"TRAILING"
+            success([verify_tool, str(target)])
+            success(arguments + ["-i", str(target), "-o", str(alignment_input)])
+            assert alignment_input.read_bytes()[68:] == aligned[68:]
 
     copied = root / "copied-public.pem"
     shutil.copyfile(public[0], copied)
